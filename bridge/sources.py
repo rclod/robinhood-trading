@@ -1,0 +1,128 @@
+"""Pluggable inputs: ratings and the portfolio snapshot.
+
+Both inputs are abstracted so the *same* decision pipeline runs in dry-run
+(cheap, offline, from a fixture) and live (expensive ratings via propagate;
+snapshot from the Robinhood MCP, populated by the executor agent).
+
+Ratings:
+  - :func:`ratings_from_fixture` — a plain ``{symbol: rating}`` dict.
+  - :func:`ratings_from_propagate` — runs TradingAgents on each watchlist name
+    (one multi-minute, multi-LLM run per ticker; needs provider API keys).
+
+Portfolio:
+  - :func:`snapshot_from_fixture` — built from a JSON file.
+  - The live snapshot is assembled by the executor from MCP results and passed
+    straight into :class:`~bridge.models.PortfolioSnapshot`; there is no
+    Python-side MCP call because those tools are agent-side, not a library.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Dict, Optional
+
+from .config import BridgeConfig
+from .models import Position, PortfolioSnapshot
+
+logger = logging.getLogger(__name__)
+
+
+# --- ratings ---------------------------------------------------------------
+
+
+def ratings_from_fixture(raw: Dict[str, str]) -> Dict[str, str]:
+    """Normalise a fixture ``{symbol: rating}`` map to canonical casing."""
+    return {sym.upper(): rating.capitalize() for sym, rating in raw.items()}
+
+
+def ratings_from_propagate(
+    watchlist, trade_date: str, config: Optional[dict] = None
+) -> Dict[str, str]:
+    """Run TradingAgents on each watchlist name and collect the 5-tier rating.
+
+    Lazy-imports the heavy graph so dry-run never pays for it. Each ticker is a
+    full, slow, billable run — this is the live ratings source.
+    """
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
+    from tradingagents.default_config import DEFAULT_CONFIG
+
+    cfg = (config or DEFAULT_CONFIG).copy()
+    graph = TradingAgentsGraph(debug=False, config=cfg)
+
+    ratings: Dict[str, str] = {}
+    for symbol in watchlist:
+        try:
+            _, rating = graph.propagate(symbol, trade_date)
+            ratings[symbol.upper()] = rating
+            logger.info("%s -> %s", symbol, rating)
+        except Exception as exc:  # one bad name shouldn't sink the whole book
+            logger.error("propagate failed for %s: %s", symbol, exc)
+    return ratings
+
+
+# --- portfolio -------------------------------------------------------------
+
+
+def snapshot_from_mcp(
+    account: dict,
+    portfolio_data: dict,
+    positions_data: dict,
+    cfg: BridgeConfig,
+) -> PortfolioSnapshot:
+    """Build a snapshot from raw Robinhood MCP ``data`` payloads.
+
+    This is the Phase-2 executor's adapter: the agent fetches ``get_accounts``,
+    ``get_portfolio`` and ``get_equity_positions`` and passes their ``data``
+    dicts here. Margin capability is inferred from the account ``type`` —
+    ``cash`` accounts can't short, so the bridge runs longs-only against them.
+
+    - equity base = portfolio ``total_value`` (whole-account value)
+    - ``buying_power`` = the broker's authoritative spendable figure
+    - sellable share counts use ``shares_available_for_sells`` when present
+    """
+    total_value = float(portfolio_data.get("total_value") or 0.0)
+    bp = portfolio_data.get("buying_power", {})
+    buying_power = float(
+        (bp.get("buying_power") if isinstance(bp, dict) else bp) or 0.0
+    )
+
+    positions = {}
+    for p in positions_data.get("positions", []):
+        sym = p["symbol"].upper()
+        shares = float(p.get("shares_available_for_sells", p.get("quantity", 0)) or 0)
+        if p.get("type") == "short":
+            shares = -abs(shares)
+        positions[sym] = Position(
+            symbol=sym,
+            shares=shares,
+            avg_cost=float(p["average_buy_price"]) if p.get("average_buy_price") else None,
+        )
+
+    return PortfolioSnapshot(
+        account_number=account.get("account_number") or cfg.account_number,
+        equity=total_value,
+        buying_power=buying_power,
+        positions=positions,
+        agentic_allowed=bool(account.get("agentic_allowed", False)),
+        margin_enabled=account.get("type") == "margin",
+    )
+
+
+def snapshot_from_fixture(raw: dict, cfg: BridgeConfig) -> PortfolioSnapshot:
+    """Build a :class:`PortfolioSnapshot` from a fixture/JSON dict."""
+    positions = {
+        sym.upper(): Position(
+            symbol=sym.upper(),
+            shares=float(p["shares"]),
+            avg_cost=p.get("avg_cost"),
+        )
+        for sym, p in raw.get("positions", {}).items()
+    }
+    return PortfolioSnapshot(
+        account_number=raw.get("account_number") or cfg.account_number,
+        equity=float(raw["equity"]),
+        buying_power=float(raw.get("buying_power", raw["equity"])),
+        positions=positions,
+        agentic_allowed=bool(raw.get("agentic_allowed", False)),
+        margin_enabled=bool(raw.get("margin_enabled", False)),
+    )

@@ -1,0 +1,33 @@
+{
+  "_comment": "Offline demo for `python -m bridge.run --demo`. $25k margin account; ratings cover every tier, an existing long that flips short (TSLA), carried Holds (MSFT/JPM), and a book whose gross trips the daily-notional cap (XOM rejected).",
+  "portfolio": {
+    "account_number": "DEMO-DRY-RUN",
+    "equity": 25000,
+    "buying_power": 25000,
+    "agentic_allowed": true,
+    "margin_enabled": true,
+    "positions": {
+      "AAPL": {"shares": 10, "avg_cost": 185.0},
+      "MSFT": {"shares": 8, "avg_cost": 410.0},
+      "TSLA": {"shares": 5, "avg_cost": 240.0}
+    }
+  },
+  "ratings": {
+    "AAPL": "Buy",
+    "NVDA": "Overweight",
+    "MSFT": "Hold",
+    "TSLA": "Sell",
+    "XOM": "Underweight",
+    "JPM": "Hold",
+    "LLY": "Buy"
+  },
+  "quotes": {
+    "AAPL": {"price": 200.0, "stop_frac": 0.08, "sector": "Technology"},
+    "NVDA": {"price": 120.0, "stop_frac": 0.08, "sector": "Technology"},
+    "MSFT": {"price": 420.0, "stop_frac": 0.08, "sector": "Technology"},
+    "TSLA": {"price": 180.0, "stop_frac": 0.08, "sector": "Consumer Cyclical"},
+    "XOM":  {"price": 110.0, "stop_frac": 0.08, "sector": "Energy"},
+    "JPM":  {"price": 200.0, "stop_frac": 0.08, "sector": "Financial Services"},
+    "LLY":  {"price": 800.0, "stop_frac": 0.08, "sector": "Healthcare"}
+  }
+}

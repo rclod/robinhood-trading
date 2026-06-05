@@ -1,0 +1,45 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "robinhood-trading"
+version = "0.1.0"
+description = "TradingAgents → Robinhood equity bridge: turns multi-agent LLM ratings into guarded, sized, idempotent equity orders."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    # Upstream multi-agent framework. Sourced from the local sibling clone in
+    # editable mode (see [tool.uv.sources]); pull updates with a plain
+    # `git pull` in that clone — see README.
+    "tradingagents",
+    "rich>=14.0.0",
+]
+
+[project.optional-dependencies]
+# Research warehouse: DuckDB queries over the JSONL decision logs and a
+# market-calendar guard for the executor schedule. The decision pipeline
+# itself needs only the core deps (stdlib sqlite3 + rich + tradingagents).
+warehouse = [
+    "duckdb>=1.0",
+    "pandas_market_calendars>=4.0",
+]
+
+[project.scripts]
+robinhood-bridge = "bridge.run:main"
+
+[tool.uv.sources]
+# Editable dependency on the upstream clone living next door. To update
+# upstream: `cd ../../TauricResearch/TradingAgents && git pull`.
+tradingagents = { path = "../../TauricResearch/TradingAgents", editable = true }
+
+[tool.setuptools.packages.find]
+include = ["bridge*"]
+
+[tool.setuptools.package-data]
+bridge = ["fixtures/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+addopts = "-ra --strict-markers"
