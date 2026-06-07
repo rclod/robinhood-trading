@@ -228,14 +228,19 @@ def _load(path: str) -> dict:
 
 def _quotes_with_prevclose(raw: Dict[str, dict], cfg: BridgeConfig) -> Dict[str, MarketQuote]:
     """Intraday quotes fixture: each entry needs price + prev_close (+ optional
-    sector/bid/ask). Built by the agent from MCP get_equity_quotes."""
+    sector/bid/ask). Built by the agent from MCP get_equity_quotes — which does
+    not carry a sector, so a missing sector is resolved via yfinance (fail-open)
+    so the agent only has to supply price + prev_close."""
+    from .marketdata import _sector  # lazy: yfinance-backed, cached, fail-open
+
     out = {}
     for sym, q in raw.items():
         price = float(q["price"])
+        sector = q.get("sector") or _sector(sym)
         out[sym] = MarketQuote(
             symbol=sym, price=price,
             stop_frac=q.get("stop_frac") or cfg.stop_fallback,
-            bid=q.get("bid"), ask=q.get("ask"), sector=q.get("sector"),
+            bid=q.get("bid"), ask=q.get("ask"), sector=sector,
             prev_close=float(q["prev_close"]) if q.get("prev_close") is not None else None,
         )
     return out
