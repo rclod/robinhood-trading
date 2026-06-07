@@ -50,6 +50,20 @@ snapshot─┘   (target      (caps,                └─► warehouse (JSONL, 
 | `sources.py` | Pluggable ratings (`propagate` or fixture) + portfolio snapshot. |
 | `plan.py` | Orchestrator: `build_order_plan()` + `persist()`. |
 | `run.py` | Dry-run CLI. |
+| `executor.py` | Translate plan → Robinhood MCP `review`/`place` args (fractional→market, whole→limit); execution payload. See [`EXECUTOR.md`](EXECUTOR.md). |
+| `intraday.py` | Intraday risk overlay: tiered HARD-exit / SOFT-rerate / RISK-OFF trip-wires. See [`INTRADAY.md`](INTRADAY.md). |
+| `news.py` | Best-effort yfinance headline scan → material-adverse flag (intraday soft trigger). |
+
+## Two scheduled agents (Phase 2)
+
+The Robinhood MCP is agent-side, so execution runs as scheduled Claude agents:
+
+- **Pre-open executor** (`EXECUTOR.md`) — once daily: ratings → plan → place the book.
+- **Intraday risk monitor** (`INTRADAY.md`) — midday + hourly, **sells only**:
+  real-time prices + sector-ETF proxies + news → de-risk on hard drawdown / sector
+  rotation; a RISK-OFF day writes a flag the executor reads to halt new buys.
+
+Both place nothing unless `BRIDGE_ENABLED` is on.
 
 ## Run the dry-run demo
 

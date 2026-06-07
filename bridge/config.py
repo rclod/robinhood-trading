@@ -41,6 +41,29 @@ DEFAULT_WATCHLIST: List[str] = [
 ]
 
 
+# Sector → liquid ETF proxy for real-time sector-move reads (quoted via the
+# Robinhood MCP). yfinance sector names map to SPDR sector ETFs.
+SECTOR_ETF_PROXY: Dict[str, str] = {
+    "Technology": "XLK",
+    "Financial Services": "XLF",
+    "Energy": "XLE",
+    "Healthcare": "XLV",
+    "Consumer Cyclical": "XLY",
+    "Consumer Defensive": "XLP",
+    "Industrials": "XLI",
+    "Communication Services": "XLC",
+    "Utilities": "XLU",
+    "Basic Materials": "XLB",
+    "Real Estate": "XLRE",
+}
+
+# Semiconductors hide inside "Technology" in yfinance's sector field, so known
+# semis get the tighter SMH proxy to catch semi-specific rotation (e.g. the
+# Broadcom-driven unwind). Override takes precedence over the broad sector ETF.
+SEMI_SYMBOLS = ("NVDA", "AMD", "AVGO", "SMCI", "MU", "INTC", "QCOM", "TXN", "ASML", "TSM", "ARM")
+SEMI_PROXY = "SMH"
+
+
 def _env_float(name: str, default: float) -> float:
     raw = os.getenv(name)
     return float(raw) if raw not in (None, "") else default
@@ -93,6 +116,12 @@ class BridgeConfig:
     # Cross the spread by this fraction to make the limit marketable.
     marketable_offset: float = 0.001
 
+    # --- intraday risk monitor (Moderate preset) ---
+    intraday_position_stop: float = 0.08      # name down >8% on day -> HARD auto-exit
+    intraday_sector_drop: float = 0.04        # sector proxy down >4% -> SOFT re-rate
+    intraday_portfolio_drawdown: float = 0.05  # book down >5% on day -> risk-off (halt buys)
+    intraday_hard_exit_fraction: float = 1.0  # fraction of a hard-stopped position to shed (1.0 = full exit)
+
     # --- universe ---
     watchlist: List[str] = field(default_factory=lambda: list(DEFAULT_WATCHLIST))
 
@@ -123,6 +152,10 @@ class BridgeConfig:
             market_hours=os.getenv("BRIDGE_MARKET_HOURS", "regular_hours"),
             order_type=os.getenv("BRIDGE_ORDER_TYPE", "limit"),
             time_in_force=os.getenv("BRIDGE_TIME_IN_FORCE", "gfd"),
+            intraday_position_stop=_env_float("BRIDGE_INTRADAY_POSITION_STOP", 0.08),
+            intraday_sector_drop=_env_float("BRIDGE_INTRADAY_SECTOR_DROP", 0.04),
+            intraday_portfolio_drawdown=_env_float("BRIDGE_INTRADAY_PORTFOLIO_DD", 0.05),
+            intraday_hard_exit_fraction=_env_float("BRIDGE_INTRADAY_HARD_EXIT_FRAC", 1.0),
         )
         watchlist = os.getenv("BRIDGE_WATCHLIST")
         if watchlist:
@@ -135,3 +168,10 @@ class BridgeConfig:
             return self.stop_fallback
         raw = self.stop_atr_mult * atr / price
         return max(self.stop_floor, min(self.stop_cap, raw))
+
+    def sector_proxy_for(self, symbol: str, sector: Optional[str]) -> Optional[str]:
+        """ETF proxy for a name's sector — SMH for known semis, else the SPDR
+        sector ETF. ``None`` if the sector has no mapped proxy."""
+        if symbol.upper() in SEMI_SYMBOLS:
+            return SEMI_PROXY
+        return SECTOR_ETF_PROXY.get(sector or "")

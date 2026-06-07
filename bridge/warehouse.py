@@ -46,6 +46,17 @@ class Warehouse:
             f.write(json.dumps(record) + "\n")
         return path
 
+    def append_fill(self, trade_date: str, record: dict) -> str:
+        """Append one execution result to ``fills-YYYY-MM-DD.jsonl``.
+
+        Records what the executor actually placed (ref_id, broker order id,
+        status, alerts) so realised fills can be joined to decisions in DuckDB.
+        """
+        path = os.path.join(self.dir, f"fills-{trade_date}.jsonl")
+        with open(path, "a", encoding="utf-8") as f:
+            f.write(json.dumps(record) + "\n")
+        return path
+
     def query(self, sql: str) -> List[Any]:
         """Run a DuckDB query over the JSONL warehouse.
 

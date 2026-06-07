@@ -68,35 +68,77 @@ def build_plan(
             rating, snapshot.equity, quote.price, stop, current, cfg,
             allow_short=allow_short,
         )
-        delta = tgt - current
-
-        if abs(delta) < 1:  # whole-share threshold; nothing to do
+        order = _order_for(symbol, current, tgt, quote, trade_date, cfg, rating)
+        if order is None:
             plan.holds.append(symbol)
+        else:
+            plan.orders.append(order)
+
+    return plan
+
+
+def _order_for(symbol, current, tgt, quote, trade_date, cfg, rating):
+    """Build a single delta order, or None when the move is sub-one-share."""
+    delta = tgt - current
+    if abs(delta) < 1:  # whole-share threshold; nothing to do
+        return None
+
+    side = "buy" if delta > 0 else "sell"
+    qty = abs(delta)
+    crosses = current != 0 and tgt != 0 and (current > 0) != (tgt > 0)
+    limit = _limit_price(quote, side, cfg)
+    notional = qty * (limit or quote.price)
+
+    return PlannedOrder(
+        symbol=symbol,
+        side=side,
+        quantity=qty,
+        order_type=cfg.order_type,
+        limit_price=limit,
+        notional=notional,
+        rating=rating,
+        sector=quote.sector,
+        target_shares=tgt,
+        current_shares=current,
+        crosses_zero=crosses,
+        ref_id=_ref_id(symbol, trade_date, side),
+        shortable=quote.shortable,
+        halted=quote.halted,
+    )
+
+
+def build_plan_from_targets(
+    trade_date: str,
+    targets: Dict[str, float],
+    snapshot: PortfolioSnapshot,
+    quotes: Dict[str, MarketQuote],
+    cfg: BridgeConfig,
+    labels: Dict[str, str] | None = None,
+) -> OrderPlan:
+    """Build a pre-guard plan from EXPLICIT per-symbol target share counts.
+
+    Used by the intraday risk monitor, which decides targets directly (e.g.
+    "exit NVDA to 0") rather than via the rating→sizing path. ``labels`` gives a
+    human reason per symbol (shown as the order's ``rating`` field, e.g.
+    "intraday-stop"); defaults to "intraday".
+    """
+    labels = labels or {}
+    plan = OrderPlan(
+        trade_date=trade_date,
+        equity=snapshot.equity,
+        execution_enabled=cfg.execution_enabled,
+    )
+    for symbol, tgt in targets.items():
+        quote = quotes.get(symbol)
+        if quote is None:
+            plan.notes.append(f"{symbol}: no quote — skipped")
             continue
-
-        side = "buy" if delta > 0 else "sell"
-        qty = abs(delta)
-        crosses = current != 0 and tgt != 0 and (current > 0) != (tgt > 0)
-        limit = _limit_price(quote, side, cfg)
-        notional = qty * (limit or quote.price)
-
-        plan.orders.append(
-            PlannedOrder(
-                symbol=symbol,
-                side=side,
-                quantity=qty,
-                order_type=cfg.order_type,
-                limit_price=limit,
-                notional=notional,
-                rating=rating,
-                sector=quote.sector,
-                target_shares=tgt,
-                current_shares=current,
-                crosses_zero=crosses,
-                ref_id=_ref_id(symbol, trade_date, side),
-                shortable=quote.shortable,
-                halted=quote.halted,
-            )
+        current = snapshot.shares_of(symbol)
+        order = _order_for(
+            symbol, current, tgt, quote, trade_date, cfg, labels.get(symbol, "intraday")
         )
-
+        if order is None:
+            plan.holds.append(symbol)
+        else:
+            plan.orders.append(order)
     return plan

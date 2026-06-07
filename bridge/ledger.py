@@ -101,6 +101,17 @@ class Ledger:
                 inserted += 1
         return inserted
 
+    def update_status(self, ref_id: str, status: str) -> bool:
+        """Advance an order's lifecycle status (planned -> placed -> filled).
+
+        Returns False if no row matched the ref_id.
+        """
+        with self._conn() as c:
+            cur = c.execute(
+                "UPDATE orders SET status = ? WHERE ref_id = ?", (status, ref_id)
+            )
+            return cur.rowcount > 0
+
     def day_trade_count(self, trade_date: str) -> int:
         """Telemetry: symbols with both a buy and a sell recorded on a date."""
         with self._conn() as c:

@@ -66,6 +66,7 @@ class MarketQuote:
     sector: Optional[str] = None
     shortable: bool = True
     halted: bool = False
+    prev_close: Optional[float] = None  # prior-session close, for intraday % move
 
 
 # --- Outputs ---------------------------------------------------------------
