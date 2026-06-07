@@ -16,6 +16,13 @@ mkdir -p "$LOGDIR"
 DATE="$(date +%F)"
 LOG="$LOGDIR/intraday-$DATE.log"
 
+# Deterministic trading-day guard (NYSE) — skip weekends/holidays cheaply,
+# before spending a headless agent session.
+if ! uv --directory "$REPO" run python -m bridge.market_calendar --date "$DATE" >/dev/null 2>&1; then
+  echo "$(date -Is) $DATE is not a US trading day — skipping intraday tick" >> "$LOG"
+  exit 0
+fi
+
 # Dry-run: kill switch stays OFF. Soft triggers stay alert-only (no --rerate) to
 # avoid Grok spend on every tick; flip ADD_RERATE=1 to escalate.
 unset BRIDGE_ENABLED || true

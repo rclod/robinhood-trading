@@ -14,15 +14,15 @@ dependencies = [
     # `git pull` in that clone — see README.
     "tradingagents",
     "rich>=14.0.0",
+    # NYSE trading-day guard for the scheduled runs (bridge.market_calendar).
+    "pandas_market_calendars>=4.0",
 ]
 
 [project.optional-dependencies]
-# Research warehouse: DuckDB queries over the JSONL decision logs and a
-# market-calendar guard for the executor schedule. The decision pipeline
-# itself needs only the core deps (stdlib sqlite3 + rich + tradingagents).
+# Research warehouse: DuckDB queries over the JSONL decision logs. The decision
+# pipeline itself needs only the core deps (stdlib sqlite3 + rich + tradingagents).
 warehouse = [
     "duckdb>=1.0",
-    "pandas_market_calendars>=4.0",
 ]
 
 [project.scripts]

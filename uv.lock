@@ -2781,6 +2781,7 @@ name = "robinhood-trading"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
+    { name = "pandas-market-calendars" },
     { name = "rich" },
     { name = "tradingagents" },
 ]
@@ -2788,13 +2789,12 @@ dependencies = [
 [package.optional-dependencies]
 warehouse = [
     { name = "duckdb" },
-    { name = "pandas-market-calendars" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "duckdb", marker = "extra == 'warehouse'", specifier = ">=1.0" },
-    { name = "pandas-market-calendars", marker = "extra == 'warehouse'", specifier = ">=4.0" },
+    { name = "pandas-market-calendars", specifier = ">=4.0" },
     { name = "rich", specifier = ">=14.0.0" },
     { name = "tradingagents", editable = "../../TauricResearch/TradingAgents" },
 ]

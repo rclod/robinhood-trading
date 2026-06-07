@@ -46,9 +46,10 @@ Install with:
 ## Caveats / future work
 
 - **Machine must be awake** at the run times (cron does not wake a sleeping host).
-- **No market-calendar guard yet** — cron fires on holidays; the agent is told to
-  stop if it's not a trading day, but that's best-effort. Adding
-  `pandas_market_calendars` (the `[warehouse]` extra) for a hard guard is a TODO.
+- **Holiday guard:** each wrapper runs `bridge.market_calendar` (NYSE via
+  `pandas_market_calendars`) and exits early on weekends/holidays before spending
+  an agent session. The agent prompt's "stop if not a trading day" is now just a
+  backstop.
 - **OAuth longevity** — if the Robinhood MCP token expires, a run will report the
   tool as unavailable; re-auth interactively with `/mcp` then resume.
 - **DST** — cron uses local wall-clock, so CT↔ET stays aligned automatically.
