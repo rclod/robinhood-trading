@@ -215,7 +215,7 @@ def main() -> None:
     from .marketdata import get_quotes, quotes_from_fixture
     from .sources import (
         ratings_from_fixture,
-        ratings_from_propagate,
+        signals_from_propagate,
         snapshot_from_fixture,
         snapshot_from_mcp,
     )
@@ -248,8 +248,11 @@ def main() -> None:
     else:
         ap.error("provide --portfolio OR all of --account-json/--portfolio-json/--positions-json")
 
+    price_targets: dict = {}
     if args.live_ratings:
-        ratings = ratings_from_propagate(cfg.watchlist, args.date)
+        signals = signals_from_propagate(cfg.watchlist, args.date)
+        ratings = {s: v["rating"] for s, v in signals.items()}
+        price_targets = {s: v["price_target"] for s, v in signals.items() if v["price_target"]}
     elif args.ratings:
         ratings = ratings_from_fixture(_load(args.ratings))
     else:
@@ -261,7 +264,7 @@ def main() -> None:
         else get_quotes(ratings.keys(), cfg)
     )
 
-    plan = build_rotation_plan(args.date, ratings, snapshot, quotes, cfg)
+    plan = build_rotation_plan(args.date, ratings, snapshot, quotes, cfg, price_targets)
     # Persist the decision (idempotent ledger + warehouse) just like the dry-run.
     ts = datetime.now(timezone.utc).isoformat()
     Ledger(default_db_path(cfg.state_dir)).record_plan(plan, ts)

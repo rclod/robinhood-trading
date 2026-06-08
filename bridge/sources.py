@@ -19,6 +19,7 @@ Portfolio:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Dict, Optional
 
 from .config import BridgeConfig
@@ -58,6 +59,46 @@ def ratings_from_propagate(
         except Exception as exc:  # one bad name shouldn't sink the whole book
             logger.error("propagate failed for %s: %s", symbol, exc)
     return ratings
+
+
+_PRICE_TARGET_RE = re.compile(r"price\s*target\**\s*:?\s*\$?\s*([\d,]+\.?\d*)", re.IGNORECASE)
+
+
+def _parse_price_target(decision_text: str) -> Optional[float]:
+    """Pull the PM's '**Price Target**: X' out of the rendered decision markdown."""
+    m = _PRICE_TARGET_RE.search(decision_text or "")
+    if not m:
+        return None
+    try:
+        return float(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+
+
+def signals_from_propagate(
+    watchlist, trade_date: str, config: Optional[dict] = None
+) -> Dict[str, dict]:
+    """Like :func:`ratings_from_propagate` but also captures the PM's price target.
+
+    Returns ``{SYMBOL: {"rating": str, "price_target": float|None}}``. The price
+    target feeds the conviction score used to prioritise funding within a tier.
+    """
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
+    from tradingagents.default_config import DEFAULT_CONFIG
+
+    cfg = (config or DEFAULT_CONFIG).copy()
+    graph = TradingAgentsGraph(debug=False, config=cfg)
+
+    signals: Dict[str, dict] = {}
+    for symbol in watchlist:
+        try:
+            final_state, rating = graph.propagate(symbol, trade_date)
+            pt = _parse_price_target(final_state.get("final_trade_decision", ""))
+            signals[symbol.upper()] = {"rating": rating, "price_target": pt}
+            logger.info("%s -> %s (target=%s)", symbol, rating, pt)
+        except Exception as exc:
+            logger.error("propagate failed for %s: %s", symbol, exc)
+    return signals
 
 
 # --- portfolio -------------------------------------------------------------

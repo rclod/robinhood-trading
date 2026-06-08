@@ -49,8 +49,9 @@ def build_rotation_plan(
     snapshot: PortfolioSnapshot,
     quotes: Dict[str, MarketQuote],
     cfg: BridgeConfig,
+    price_targets: Dict[str, float] | None = None,
 ) -> OrderPlan:
-    rec = build_recommendation(trade_date, ratings, snapshot, quotes, cfg)
+    rec = build_recommendation(trade_date, ratings, snapshot, quotes, cfg, price_targets)
     equity = snapshot.equity
     plan = OrderPlan(trade_date=trade_date, equity=equity,
                      execution_enabled=cfg.execution_enabled)
@@ -89,8 +90,11 @@ def build_rotation_plan(
             sec = q.sector or "UNKNOWN"
             sector_used[sec] = sector_used.get(sec, 0.0) + p.shares * q.price
 
+    # Fund strongest first: tier, then finer conviction score (price-target
+    # upside), then held-names, then name. Score replaces the old arbitrary
+    # alphabetical tiebreak among equal-tier names.
     adds = [t for t in rec.targets if t.action == "add"]
-    adds.sort(key=lambda t: (t.conviction, 0 if t.symbol in held else 1, t.symbol))
+    adds.sort(key=lambda t: (t.conviction, -t.score, 0 if t.symbol in held else 1, t.symbol))
 
     candidates: List[dict] = []
     for t in adds:
@@ -123,7 +127,7 @@ def build_rotation_plan(
         "dry_powder": round(snapshot.buying_power - deployed, 2),
         "candidates": candidates,
         "recommendation": [
-            {"symbol": t.symbol, "rating": t.rating, "action": t.action,
+            {"symbol": t.symbol, "rating": t.rating, "score": t.score, "action": t.action,
              "target_notional": t.target_notional, "current_notional": t.current_notional,
              "delta_notional": t.delta_notional}
             for t in rec.by_conviction()
@@ -139,7 +143,7 @@ def build_rotation_plan(
 
 def _cand(t, funded, status, reason=""):
     return {
-        "symbol": t.symbol, "rating": t.rating, "conviction": t.conviction,
+        "symbol": t.symbol, "rating": t.rating, "score": t.score,
         "desired_notional": t.delta_notional, "funded_notional": round(funded, 2),
         "status": status, "reason": reason,
     }

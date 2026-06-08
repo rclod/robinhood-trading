@@ -72,6 +72,39 @@ def test_conviction_priority_funds_buy_before_overweight():
     assert funded[0]["symbol"] == "MSFT"          # Buy beats Overweight, not cheapness
 
 
+def test_conviction_score_orders_within_tier_by_upside():
+    # Two Overweights, equal tier. The one with more upside to its price target
+    # funds first — replacing the arbitrary alphabetical tiebreak.
+    cfg = BridgeConfig()
+    snap = _snap(buying_power=500)  # only one full slice fits
+    quotes = {"ZZZ": _q(100), "AAA": _q(100, "Energy")}
+    # AAA priced 100 target 105 (+5%); ZZZ priced 100 target 140 (+40%).
+    price_targets = {"AAA": 105.0, "ZZZ": 140.0}
+    plan = build_rotation_plan("d", {"AAA": "Overweight", "ZZZ": "Overweight"},
+                               snap, quotes, cfg, price_targets)
+    funded = [c for c in plan.rotation["candidates"] if c["status"] in ("funded", "scaled")]
+    assert funded[0]["symbol"] == "ZZZ"   # higher upside funded first, despite Z>A
+
+
+def test_implausible_price_target_is_ignored():
+    from bridge.recommend import conviction_score
+    base = conviction_score("Overweight", None, 100.0)         # tier midpoint
+    garbage = conviction_score("Overweight", 720.0, 83.0)      # +777% — ignored
+    sane = conviction_score("Overweight", 110.0, 100.0)        # +10% — applied
+    assert garbage == base       # outlier falls back, doesn't dominate
+    assert sane > base
+
+
+def test_score_falls_back_to_tier_without_targets():
+    cfg = BridgeConfig()
+    rec_q = {"AAA": _q(100), "BBB": _q(100)}
+    from bridge.recommend import build_recommendation
+    rec = build_recommendation("d", {"AAA": "Buy", "BBB": "Overweight"},
+                               _snap(buying_power=0), rec_q, cfg)
+    score = {t.symbol: t.score for t in rec.targets}
+    assert score["AAA"] > score["BBB"]    # Buy outranks Overweight on tier alone
+
+
 def test_reductions_execute_regardless_of_budget():
     cfg = BridgeConfig()
     snap = _snap(buying_power=0, positions={"QNT": Position("QNT", shares=30)}, margin=False)
