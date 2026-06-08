@@ -11,6 +11,11 @@ export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"  # cron has a 
 TA_DIR="${TA_DIR:-$HOME/code/github.com/TauricResearch/TradingAgents}"
 REPO="${REPO:-$HOME/code/github.com/rclod/robinhood-trading}"
 ACCT="${BRIDGE_ACCOUNT_NUMBER:-963494976}"
+
+# Export provider config (XAI_API_KEY, TRADINGAGENTS_*) so the bridge subprocess
+# has it regardless of cwd — needed when --rerate runs propagate. See run_executor.sh.
+set -a; [ -f "$TA_DIR/.env" ] && . "$TA_DIR/.env"; set +a
+
 LOGDIR="$HOME/.tradingagents/bridge/logs"
 mkdir -p "$LOGDIR"
 DATE="$(date +%F)"

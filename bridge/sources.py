@@ -63,11 +63,38 @@ def ratings_from_propagate(
 # --- portfolio -------------------------------------------------------------
 
 
+def _unwrap_data(d: dict) -> dict:
+    """Tolerate a raw MCP response (``{"data": {...}}``) vs. the inner data dict."""
+    if isinstance(d, dict) and isinstance(d.get("data"), dict):
+        return d["data"]
+    return d
+
+
+def _select_account(raw: dict, account_number: Optional[str]) -> dict:
+    """Accept any shape an agent might write for the account: the single account
+    object, ``{"accounts": [...]}``, or the raw ``{"data": {"accounts": [...]}}``.
+    Selects by ``account_number`` when given, else the agentic account, else first.
+    """
+    raw = _unwrap_data(raw)
+    accounts = raw.get("accounts") if isinstance(raw, dict) else None
+    if accounts is None:
+        return raw  # already a single account object
+    if account_number:
+        for a in accounts:
+            if str(a.get("account_number")) == str(account_number):
+                return a
+    for a in accounts:
+        if a.get("agentic_allowed"):
+            return a
+    return accounts[0] if accounts else {}
+
+
 def snapshot_from_mcp(
     account: dict,
     portfolio_data: dict,
     positions_data: dict,
     cfg: BridgeConfig,
+    account_number: Optional[str] = None,
 ) -> PortfolioSnapshot:
     """Build a snapshot from raw Robinhood MCP ``data`` payloads.
 
@@ -80,6 +107,10 @@ def snapshot_from_mcp(
     - ``buying_power`` = the broker's authoritative spendable figure
     - sellable share counts use ``shares_available_for_sells`` when present
     """
+    account = _select_account(account, account_number or cfg.account_number)
+    portfolio_data = _unwrap_data(portfolio_data)
+    positions_data = _unwrap_data(positions_data)
+
     total_value = float(portfolio_data.get("total_value") or 0.0)
     bp = portfolio_data.get("buying_power", {})
     buying_power = float(

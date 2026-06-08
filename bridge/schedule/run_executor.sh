@@ -12,6 +12,11 @@ TA_DIR="${TA_DIR:-$HOME/code/github.com/TauricResearch/TradingAgents}"
 REPO="${REPO:-$HOME/code/github.com/rclod/robinhood-trading}"
 ACCT="${BRIDGE_ACCOUNT_NUMBER:-963494976}"
 WATCHLIST_CORE="${WATCHLIST_CORE:-AAPL,JPM}"   # added to held names; expand as desired
+
+# Export provider config (XAI_API_KEY, TRADINGAGENTS_*) so the bridge subprocess
+# has it regardless of cwd. `uv --directory "$REPO"` runs from the repo where
+# there's no .env, and find_dotenv(usecwd=True) won't reach TradingAgents/.env.
+set -a; [ -f "$TA_DIR/.env" ] && . "$TA_DIR/.env"; set +a
 LOGDIR="$HOME/.tradingagents/bridge/logs"
 mkdir -p "$LOGDIR"
 DATE="$(date +%F)"

@@ -270,7 +270,8 @@ def main() -> None:
         snapshot = snapshot_from_fixture(_load(args.portfolio), cfg)
     elif args.account_json and args.portfolio_json and args.positions_json:
         snapshot = snapshot_from_mcp(_load(args.account_json), _load(args.portfolio_json),
-                                     _load(args.positions_json), cfg)
+                                     _load(args.positions_json), cfg,
+                                     account_number=args.account_number)
     else:
         ap.error("provide --portfolio OR --account-json/--portfolio-json/--positions-json")
 
