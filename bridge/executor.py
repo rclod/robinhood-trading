@@ -232,6 +232,8 @@ def main() -> None:
     # Ratings + quotes.
     ap.add_argument("--ratings", help="{symbol: rating} JSON")
     ap.add_argument("--live-ratings", action="store_true", help="run propagate on the watchlist")
+    ap.add_argument("--signals", help="load saved {symbol:{rating,price_target}} JSON (place step)")
+    ap.add_argument("--save-signals", help="write propagate-derived signals to JSON (compute step)")
     ap.add_argument("--quotes", help="quotes fixture JSON (else live yfinance)")
     ap.add_argument("--date", default=date.today().isoformat())
     args = ap.parse_args()
@@ -249,14 +251,23 @@ def main() -> None:
         ap.error("provide --portfolio OR all of --account-json/--portfolio-json/--positions-json")
 
     price_targets: dict = {}
-    if args.live_ratings:
+    if args.signals:
+        # Place step: reuse the ratings/targets computed pre-open; only capital
+        # and prices are refreshed (in the snapshot/quotes above).
+        sig = _load(args.signals)
+        ratings = {s: v["rating"] for s, v in sig.items()}
+        price_targets = {s: v.get("price_target") for s, v in sig.items() if v.get("price_target")}
+    elif args.live_ratings:
         signals = signals_from_propagate(cfg.watchlist, args.date)
         ratings = {s: v["rating"] for s, v in signals.items()}
         price_targets = {s: v["price_target"] for s, v in signals.items() if v["price_target"]}
+        if args.save_signals:  # hand off to the at-open place step
+            with open(args.save_signals, "w", encoding="utf-8") as f:
+                json.dump(signals, f, indent=2)
     elif args.ratings:
         ratings = ratings_from_fixture(_load(args.ratings))
     else:
-        ap.error("provide --ratings or --live-ratings")
+        ap.error("provide --signals, --ratings, or --live-ratings")
 
     quotes = (
         quotes_from_fixture(_load(args.quotes), cfg)

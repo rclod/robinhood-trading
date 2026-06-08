@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
-# Pre-open executor — headless dry-run report of the proposed daily book.
+# Pre-open COMPUTE step — rate the universe and save the day's signals.
 #
-# Like run_intraday.sh, runs `claude -p` FROM the TradingAgents dir (Robinhood
-# MCP is local-scoped there) with READ-ONLY tools and BRIDGE_ENABLED unset.
-# This DOES run propagate (Grok) on the watchlist — billable. The watchlist is
-# the union of held names + WATCHLIST_CORE, kept small to bound daily cost.
+# This runs the expensive propagate (Grok) pre-open and writes the resulting
+# signals (rating + price target per name) to a dated file. It places NOTHING:
+# fractional buys are market orders that only fill in regular hours, so the
+# at-open run_place.sh step does the placement with fresh capital/prices.
+#
+# Runs `claude -p` FROM the TradingAgents dir (Robinhood MCP is local-scoped
+# there) with READ-ONLY tools and BRIDGE_ENABLED unset.
 set -euo pipefail
 export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"  # cron has a minimal PATH
 
@@ -20,9 +23,11 @@ WATCHLIST_CORE="${WATCHLIST_CORE:-AAPL,MSFT,NVDA,AMD,AVGO,GOOGL,META,NFLX,AMZN,T
 # there's no .env, and find_dotenv(usecwd=True) won't reach TradingAgents/.env.
 set -a; [ -f "$TA_DIR/.env" ] && . "$TA_DIR/.env"; set +a
 LOGDIR="$HOME/.tradingagents/bridge/logs"
-mkdir -p "$LOGDIR"
+SIGDIR="$HOME/.tradingagents/bridge/signals"
+mkdir -p "$LOGDIR" "$SIGDIR"
 DATE="$(date +%F)"
 LOG="$LOGDIR/executor-$DATE.log"
+SIG="$SIGDIR/signals-$DATE.json"   # handoff to the at-open place step
 
 # Deterministic trading-day guard (NYSE) — skip weekends/holidays before
 # spending a headless agent session (and Grok on propagate).
@@ -42,13 +47,15 @@ read; you have no order-placing tool. If today is not a US trading day, stop.
    account.json / portfolio.json / positions.json (the respective data objects).
 2. Let HELD = the position symbols. Build a watchlist = HELD ∪ {$WATCHLIST_CORE}
    as a comma-separated UPPERCASE string with no spaces.
-3. Run (this calls Grok per name — may take several minutes):
+3. Run (this calls Grok per name — may take several minutes). It also saves the
+   signals (rating + price target per name) for the at-open place step:
    BRIDGE_WATCHLIST=<watchlist> uv --directory "$REPO" run python -m bridge.executor \\
      --account-number $ACCT --account-json <account.json> --portfolio-json <portfolio.json> \\
-     --positions-json <positions.json> --live-ratings --date $DATE
-4. Report the proposed book: for each ticket the symbol, rating, side, qty, type,
-   and rationale (current→target); then the rejected orders (with reason) and holds.
-   Confirm execution_enabled is false and that nothing was placed.
+     --positions-json <positions.json> --live-ratings --save-signals "$SIG" --date $DATE
+4. Report the recommendation + funding: the conviction-ranked book, what would be
+   funded vs deferred, and the dry-powder reserve held back. Confirm
+   execution_enabled is false and that nothing was placed (placement is the
+   at-open step). Confirm the signals file was written to: $SIG
 Do not place, review, or cancel any order.
 EOF
 
