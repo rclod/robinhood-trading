@@ -113,6 +113,12 @@ class OrderPlan:
     holds: List[str] = field(default_factory=list)  # rated, zero-delta (carry)
     notes: List[str] = field(default_factory=list)
     execution_enabled: bool = False  # kill switch; False => dry-run only
+    # Every assessed name -> its rating, traded or not (so holds keep their
+    # rating for audit). Populated by the plan builders.
+    assessments: Dict[str, str] = field(default_factory=dict)
+    # Capital-allocation report (set by build_rotation_plan): budget, deployed,
+    # remaining, ranked candidates funded/scaled/deferred. Empty for non-rotation plans.
+    rotation: Dict = field(default_factory=dict)
 
     @property
     def approved_orders(self) -> List[PlannedOrder]:

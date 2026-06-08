@@ -11,7 +11,9 @@ export PATH="$HOME/.local/bin:/usr/local/bin:/usr/bin:/bin:$PATH"  # cron has a 
 TA_DIR="${TA_DIR:-$HOME/code/github.com/TauricResearch/TradingAgents}"
 REPO="${REPO:-$HOME/code/github.com/rclod/robinhood-trading}"
 ACCT="${BRIDGE_ACCOUNT_NUMBER:-963494976}"
-WATCHLIST_CORE="${WATCHLIST_CORE:-AAPL,JPM}"   # added to held names; expand as desired
+# Full diversified universe rated each morning (held names are unioned in too).
+# ~20 Grok runs/day — trim this list to cut cost.
+WATCHLIST_CORE="${WATCHLIST_CORE:-AAPL,MSFT,NVDA,AMD,AVGO,GOOGL,META,NFLX,AMZN,TSLA,HD,JPM,V,GS,UNH,LLY,XOM,CVX,CAT,COST}"
 
 # Export provider config (XAI_API_KEY, TRADINGAGENTS_*) so the bridge subprocess
 # has it regardless of cwd. `uv --directory "$REPO"` runs from the repo where

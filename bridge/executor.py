@@ -35,7 +35,7 @@ from typing import List, Optional
 from .config import BridgeConfig
 from .ledger import Ledger, default_db_path
 from .models import OrderPlan, PlannedOrder
-from .plan import build_order_plan
+from .allocate import build_rotation_plan
 from .warehouse import Warehouse
 
 
@@ -150,6 +150,8 @@ def build_execution_payload(
             for o in plan.rejected_orders
         ],
         "holds": plan.holds,
+        "assessments": plan.assessments,
+        "rotation": plan.rotation,
         "notes": plan.notes,
     }
 
@@ -243,7 +245,7 @@ def main() -> None:
         else get_quotes(ratings.keys(), cfg)
     )
 
-    plan = build_order_plan(args.date, ratings, snapshot, quotes, cfg)
+    plan = build_rotation_plan(args.date, ratings, snapshot, quotes, cfg)
     # Persist the decision (idempotent ledger + warehouse) just like the dry-run.
     ts = datetime.now(timezone.utc).isoformat()
     Ledger(default_db_path(cfg.state_dir)).record_plan(plan, ts)

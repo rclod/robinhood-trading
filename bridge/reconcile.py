@@ -57,6 +57,7 @@ def build_plan(
         plan.notes.append("cash account (no margin) — longs-only; bearish ratings exit to flat")
 
     for symbol, rating in ratings.items():
+        plan.assessments[symbol] = rating  # record every rating, traded or not
         quote = quotes.get(symbol)
         if quote is None:
             plan.notes.append(f"{symbol}: no quote — skipped")
