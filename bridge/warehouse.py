@@ -40,6 +40,7 @@ class Warehouse:
             "orders": [asdict(o) for o in plan.orders],
             "holds": plan.holds,
             "assessments": plan.assessments,  # every rating, incl. holds
+            "rotation": plan.rotation,        # recommendation + funding report
             "notes": plan.notes,
         }
         path = self._path(plan.trade_date)

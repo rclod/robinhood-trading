@@ -1,23 +1,18 @@
-"""Rotation / capital-allocation: deploy buying power to the best names.
+"""Funding layer — move toward the recommended book with today's settled cash.
 
-The base pipeline (``build_order_plan``) sizes each name independently. Rotation
-adds the portfolio view the user needs before going live: rank ALL rated names,
-fund the strongest buy candidates from **settled buying power**, scaling the
-marginal buy to fully deploy capital, and produce an auditable report of what
-got funded vs deferred and why.
+Takes the capital-agnostic :mod:`recommend` target book and produces orders:
 
-Key rules:
-  - **Reductions (sells: trims/exits) always execute** — they're risk-reducing
-    and free of budget. They are processed first.
-  - **Buys are budget-constrained.** Budget = settled ``buying_power``. On a cash
-    account, same-day sale proceeds are unsettled (T+1) and are deliberately NOT
-    counted, so the plan never spends money it doesn't have today.
-  - Buy candidates are ranked strongest-conviction first (Buy before Overweight,
-    larger desired size as tiebreak), then funded greedily subject to per-name,
-    sector, and max-position caps. The marginal candidate is scaled to fit.
+  - **Reductions (trim/exit) execute fully** — risk-reducing, no budget needed.
+  - **Buys are funded conviction-first** (Buy before Overweight; within a tier,
+    names already held first, then alphabetical) using **fractional dollar
+    amounts**, so share price never strands capital or biases which names get
+    bought. The marginal name is scaled to the remaining budget.
+  - **Dry powder:** a reserve (``cash_reserve_frac`` of equity) is held back
+    every day. On a cash account sells settle T+1, so deploying 100% today would
+    leave nothing settled to act on tomorrow.
 
-The result is a normal ``OrderPlan`` (so the executor consumes it unchanged) with
-a ``rotation`` report attached.
+Selection of *what* to buy comes entirely from the recommendation (conviction).
+This module only decides *how much* of each to fund given the cash on hand.
 """
 
 from __future__ import annotations
@@ -26,22 +21,26 @@ import math
 from typing import Dict, List
 
 from .config import BridgeConfig
-from .guards import _TIER_RANK, apply_guards
-from .models import MarketQuote, OrderPlan, PortfolioSnapshot
-from .reconcile import _order_for
-from .sizing import target_shares
+from .guards import apply_guards
+from .models import MarketQuote, OrderPlan, PlannedOrder, PortfolioSnapshot
+from .reconcile import _order_for, _ref_id
+from .recommend import build_recommendation
+
+MIN_BUY = 1.0  # Robinhood fractional minimum (USD)
 
 
-def _conviction(rating: str) -> int:
-    return _TIER_RANK.get(rating.capitalize(), 2)  # 0=Buy strongest
-
-
-def _cand(symbol, rating, desired, funded, status, reason=""):
-    return {
-        "symbol": symbol, "rating": rating, "rank": None,
-        "desired_notional": round(desired, 2), "funded_notional": round(funded, 2),
-        "status": status, "reason": reason,
-    }
+def _dollar_buy(symbol, amount, quote, current_shares, trade_date, rating, cfg):
+    """A fractional/dollar-based market buy order."""
+    price = quote.ask or quote.price
+    approx_shares = amount / price if price else 0.0
+    return PlannedOrder(
+        symbol=symbol, side="buy", quantity=round(approx_shares, 6),
+        order_type="market", limit_price=None, notional=round(amount, 2),
+        dollar_amount=round(amount, 2), rating=rating, sector=quote.sector,
+        target_shares=current_shares + approx_shares, current_shares=current_shares,
+        crosses_zero=False, ref_id=_ref_id(symbol, trade_date, "buy"),
+        shortable=quote.shortable, halted=quote.halted,
+    )
 
 
 def build_rotation_plan(
@@ -51,116 +50,96 @@ def build_rotation_plan(
     quotes: Dict[str, MarketQuote],
     cfg: BridgeConfig,
 ) -> OrderPlan:
-    """Build a guarded, budget-allocated rotation plan from ratings + state."""
-    allow_short = cfg.allow_short and snapshot.margin_enabled
+    rec = build_recommendation(trade_date, ratings, snapshot, quotes, cfg)
     equity = snapshot.equity
     plan = OrderPlan(trade_date=trade_date, equity=equity,
                      execution_enabled=cfg.execution_enabled)
+    plan.assessments = {t.symbol: t.rating for t in rec.targets}
     if cfg.allow_short and not snapshot.margin_enabled:
         plan.notes.append("cash account (no margin) — longs-only; bearish ratings exit to flat")
 
-    # 1. Desired (full-conviction) target per rated name.
-    desired = {}
-    for sym, rating in ratings.items():
-        plan.assessments[sym] = rating
-        q = quotes.get(sym)
-        if q is None:
-            plan.notes.append(f"{sym}: no quote — skipped")
+    held = {s for s, p in snapshot.positions.items() if p.shares != 0}
+
+    # 1. Reductions (trim/exit) — execute fully, regardless of budget.
+    for t in rec.targets:
+        if t.action not in ("trim", "exit"):
             continue
-        cur = snapshot.shares_of(sym)
-        stop = q.stop_frac if q.stop_frac else cfg.stop_fallback
-        tgt = target_shares(rating, equity, q.price, stop, cur, cfg, allow_short=allow_short)
-        desired[sym] = (rating, cur, tgt, q)
-
-    # 2. Split into reductions (sells) and increases (buys).
-    reductions, increases = [], []
-    for sym, (rating, cur, tgt, q) in desired.items():
-        delta = tgt - cur
-        if delta <= -1:
-            reductions.append((sym, rating, cur, tgt, q))
-        elif delta >= 1:
-            increases.append((sym, rating, cur, tgt, q))
+        q = quotes[t.symbol]
+        cur = snapshot.shares_of(t.symbol)
+        tgt_shares = 0.0 if t.action == "exit" else max(0.0, math.floor(t.target_notional / q.price))
+        o = _order_for(t.symbol, cur, tgt_shares, q, trade_date, cfg, t.rating)
+        if o:
+            plan.orders.append(o)
         else:
-            plan.holds.append(sym)
+            plan.holds.append(t.symbol)
+    for t in rec.targets:
+        if t.action == "hold":
+            plan.holds.append(t.symbol)
 
-    # 3. Reductions always execute (risk-reducing, no budget needed).
-    for sym, rating, cur, tgt, q in reductions:
-        o = _order_for(sym, cur, tgt, q, trade_date, cfg, rating)
-        (plan.orders.append(o) if o else plan.holds.append(sym))
-
-    # 4. Rank buy candidates strongest-first; tiebreak larger desired add.
-    def _price(q):
-        return q.ask or q.price
-
-    increases.sort(key=lambda it: (_conviction(it[1]), -((it[3] - it[2]) * _price(it[4]))))
-
-    # 5. Greedily fund from settled buying power, respecting caps; scale marginal.
-    budget = max(0.0, snapshot.buying_power)
+    # 2. Buys — conviction-priority, fractional, within the dry-powder budget.
+    # Reserve is a fraction of settled buying power (spendable), so we always
+    # keep some of today's cash liquid for tomorrow (sells settle T+1).
+    reserve = cfg.cash_reserve_frac * snapshot.buying_power
+    budget = max(0.0, snapshot.buying_power - reserve)
     deployed = 0.0
-    open_names = {s for s, p in snapshot.positions.items() if p.shares != 0}
     sector_used: Dict[str, float] = {}
     for s, p in snapshot.positions.items():
         q = quotes.get(s)
         if q and p.shares > 0:
-            sector_used[q.sector or "UNKNOWN"] = sector_used.get(q.sector or "UNKNOWN", 0.0) + p.shares * q.price
+            sec = q.sector or "UNKNOWN"
+            sector_used[sec] = sector_used.get(sec, 0.0) + p.shares * q.price
+
+    adds = [t for t in rec.targets if t.action == "add"]
+    adds.sort(key=lambda t: (t.conviction, 0 if t.symbol in held else 1, t.symbol))
 
     candidates: List[dict] = []
-    for rank, (sym, rating, cur, tgt, q) in enumerate(increases):
-        price = _price(q)
-        desired_notional = (tgt - cur) * price
+    for t in adds:
+        q = quotes[t.symbol]
         sec = q.sector or "UNKNOWN"
-
-        if cur == 0 and len(open_names) >= cfg.max_positions:
-            candidates.append(_cand(sym, rating, desired_notional, 0, "deferred", "max_positions reached"))
-            continue
-
-        per_name_room = cfg.per_name_cap * equity - cur * price
+        per_name_room = cfg.per_name_cap * equity - t.current_notional
         sector_room = cfg.sector_cap * equity - sector_used.get(sec, 0.0)
-        budget_room = budget - deployed
-        room = min(desired_notional, max(0.0, per_name_room), max(0.0, sector_room), max(0.0, budget_room))
-
-        if room < price:  # can't afford a single share
-            reason = "insufficient settled buying power" if budget_room < price else "per-name/sector cap reached"
-            candidates.append(_cand(sym, rating, desired_notional, 0, "deferred", reason))
+        room = min(t.delta_notional, max(0.0, per_name_room),
+                   max(0.0, sector_room), max(0.0, budget - deployed))
+        if room < MIN_BUY:
+            reason = "dry-powder budget reached" if (budget - deployed) < MIN_BUY else "per-name/sector cap reached"
+            candidates.append(_cand(t, 0.0, "deferred", reason))
             continue
+        amount = round(room, 2)
+        plan.orders.append(_dollar_buy(t.symbol, amount, q, snapshot.shares_of(t.symbol),
+                                       trade_date, t.rating, cfg))
+        deployed += amount
+        sector_used[sec] = sector_used.get(sec, 0.0) + (t.current_notional + amount)
+        status = "funded" if amount >= t.delta_notional - 0.01 else "scaled"
+        candidates.append(_cand(t, amount, status,
+                                "" if status == "funded" else f"scaled to ${room:,.0f} remaining"))
 
-        add_shares = min(tgt - cur, math.floor(room / price))
-        if add_shares < 1:
-            candidates.append(_cand(sym, rating, desired_notional, 0, "deferred", "no whole share fits"))
-            continue
-
-        new_tgt = cur + add_shares
-        o = _order_for(sym, cur, new_tgt, q, trade_date, cfg, rating)
-        if o is None:
-            plan.holds.append(sym)
-            continue
-        plan.orders.append(o)
-        funded = add_shares * price
-        deployed += funded
-        sector_used[sec] = sector_used.get(sec, 0.0) + new_tgt * price
-        if cur == 0:
-            open_names.add(sym)
-        status = "funded" if add_shares == (tgt - cur) else "scaled"
-        reason = "" if status == "funded" else f"scaled to fit ${room:,.0f} of room"
-        row = _cand(sym, rating, desired_notional, funded, status, reason)
-        row["rank"] = rank
-        candidates.append(row)
-
-    # 6. Guards (defense-in-depth; allocation already respects caps + budget).
     plan = apply_guards(plan, snapshot, cfg)
 
-    # 7. Attach the rotation report.
-    funded_n = sum(1 for c in candidates if c["status"] in ("funded", "scaled"))
-    deferred_n = sum(1 for c in candidates if c["status"] == "deferred")
     plan.rotation = {
-        "buying_power": round(budget, 2),
+        "buying_power": round(snapshot.buying_power, 2),
+        "reserve": round(reserve, 2),
+        "budget": round(budget, 2),
         "deployed": round(deployed, 2),
-        "remaining": round(budget - deployed, 2),
+        "dry_powder": round(snapshot.buying_power - deployed, 2),
         "candidates": candidates,
-        "sells": [{"symbol": s, "rating": r} for s, r, _, _, _ in reductions],
+        "recommendation": [
+            {"symbol": t.symbol, "rating": t.rating, "action": t.action,
+             "target_notional": t.target_notional, "current_notional": t.current_notional,
+             "delta_notional": t.delta_notional}
+            for t in rec.by_conviction()
+        ],
     }
+    funded_n = sum(1 for c in candidates if c["status"] in ("funded", "scaled"))
     plan.notes.append(
-        f"rotation: ${deployed:,.0f}/${budget:,.0f} settled BP deployed across "
-        f"{funded_n} buy(s); {deferred_n} deferred"
+        f"funding: ${deployed:,.0f} deployed / ${budget:,.0f} budget "
+        f"(${reserve:,.0f} dry-powder reserve held); {funded_n} buy(s)"
     )
     return plan
+
+
+def _cand(t, funded, status, reason=""):
+    return {
+        "symbol": t.symbol, "rating": t.rating, "conviction": t.conviction,
+        "desired_notional": t.delta_notional, "funded_notional": round(funded, 2),
+        "status": status, "reason": reason,
+    }

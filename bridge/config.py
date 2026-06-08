@@ -97,6 +97,10 @@ class BridgeConfig:
     )
     allow_short: bool = True          # honoured only if the account has margin;
                                       # on a cash account bearish ratings exit to flat
+    # Dry powder: fraction of settled BUYING POWER kept UNdeployed each day. On a
+    # cash account sells settle T+1, so deploying 100% today leaves nothing
+    # settled to act on tomorrow. Funding deploys at most (1 - frac) of buying power.
+    cash_reserve_frac: float = 0.10
     risk_per_trade: float = 0.01      # 1% of equity max loss at the stop
     stop_atr_mult: float = 2.0        # stop distance = mult * ATR(14)
     stop_floor: float = 0.05          # clamp derived stop to [floor, cap]
@@ -140,6 +144,7 @@ class BridgeConfig:
             account_number=os.getenv("BRIDGE_ACCOUNT_NUMBER") or None,
             execution_enabled=_env_bool("BRIDGE_ENABLED", False),
             allow_short=_env_bool("BRIDGE_ALLOW_SHORT", True),
+            cash_reserve_frac=_env_float("BRIDGE_CASH_RESERVE_FRAC", 0.10),
             risk_per_trade=_env_float("BRIDGE_RISK_PER_TRADE", 0.01),
             stop_atr_mult=_env_float("BRIDGE_STOP_ATR_MULT", 2.0),
             stop_floor=_env_float("BRIDGE_STOP_FLOOR", 0.05),

@@ -93,6 +93,10 @@ class PlannedOrder:
     current_shares: float
     crosses_zero: bool
     ref_id: str
+    # Fractional/dollar-based buy: when set, the order is placed by USD notional
+    # (type=market, regular_hours) rather than share count — used by funding so
+    # share price never strands capital or biases name selection.
+    dollar_amount: Optional[float] = None
     shortable: bool = True
     halted: bool = False
     approved: bool = True

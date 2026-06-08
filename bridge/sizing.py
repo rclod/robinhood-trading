@@ -61,3 +61,21 @@ def target_shares(
     notional = min(tier_notional, risk_notional, cap_notional)
     shares = math.floor(notional / price)
     return math.copysign(shares, weight) if shares else 0.0
+
+
+def target_notional(rating, equity, stop_frac, cfg, allow_short=True):
+    """Signed target dollar exposure for a name — the capital-agnostic, price-
+    independent recommendation. ``None`` means carry (Hold). Bearish on a
+    cash account (``allow_short=False``) targets flat (0)."""
+    weight = target_weight(rating, cfg)
+    if weight is None:
+        return None  # carry
+    if weight < 0 and not allow_short:
+        return 0.0  # exit to flat
+    safe_stop = max(stop_frac, 1e-6)
+    notional = min(
+        abs(weight) * equity,
+        (cfg.risk_per_trade * equity) / safe_stop,
+        cfg.per_name_cap * equity,
+    )
+    return math.copysign(notional, weight)

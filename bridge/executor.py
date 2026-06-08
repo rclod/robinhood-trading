@@ -81,6 +81,22 @@ def build_ticket(
     execution_enabled: bool,
 ) -> OrderTicket:
     """Translate one approved PlannedOrder into review/place argument dicts."""
+    # Fractional/dollar-based buy: place by USD notional, market, regular hours.
+    if order.dollar_amount is not None:
+        review_args = {
+            "account_number": account_number,
+            "symbol": order.symbol,
+            "side": order.side,
+            "type": "market",
+            "dollar_amount": f"{order.dollar_amount:.2f}",
+            "time_in_force": cfg.time_in_force,
+            "market_hours": "regular_hours",
+        }
+        place_args = dict(review_args, ref_id=order.ref_id)
+        return OrderTicket(planned=order, review_args=review_args,
+                           place_args=place_args,
+                           place=execution_enabled and order.approved)
+
     fractional = _is_fractional(order.quantity)
 
     if fractional:
