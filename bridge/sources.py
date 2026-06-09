@@ -19,6 +19,7 @@ Portfolio:
 from __future__ import annotations
 
 import logging
+import os
 import re
 from typing import Dict, Optional
 
@@ -36,6 +37,35 @@ def ratings_from_fixture(raw: Dict[str, str]) -> Dict[str, str]:
     return {sym.upper(): rating.capitalize() for sym, rating in raw.items()}
 
 
+def _prepare_propagate_config(config: Optional[dict]) -> dict:
+    """Build the TradingAgents config for a propagate run, routing the scarce
+    Alpha Vantage quota to its highest-value use.
+
+    AV's free tier is tiny (~25 req/day), so we spend it only on NEWS (timestamped
+    + sentiment-scored, incl. the macro "big news") — fundamentals/prices/indicators
+    stay on free yfinance. The vendor string ``"alpha_vantage,yfinance"`` makes
+    route_to_vendor try AV first and fall back to yfinance automatically once the
+    quota is hit, so the priority names (run first) get AV and the rest degrade
+    cleanly. Disable with BRIDGE_AV_NEWS=0.
+    """
+    from tradingagents.default_config import DEFAULT_CONFIG
+
+    cfg = (config or DEFAULT_CONFIG).copy()
+    if os.getenv("ALPHA_VANTAGE_API_KEY") and _env_truthy("BRIDGE_AV_NEWS", default=True):
+        vendors = dict(cfg.get("data_vendors", {}))  # copy nested dict (shallow .copy())
+        vendors["news_data"] = "alpha_vantage,yfinance"
+        cfg["data_vendors"] = vendors
+        logger.info("Alpha Vantage routed for news (yfinance fallback on quota)")
+    return cfg
+
+
+def _env_truthy(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None or raw == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
 def ratings_from_propagate(
     watchlist, trade_date: str, config: Optional[dict] = None
 ) -> Dict[str, str]:
@@ -45,9 +75,8 @@ def ratings_from_propagate(
     full, slow, billable run — this is the live ratings source.
     """
     from tradingagents.graph.trading_graph import TradingAgentsGraph
-    from tradingagents.default_config import DEFAULT_CONFIG
 
-    cfg = (config or DEFAULT_CONFIG).copy()
+    cfg = _prepare_propagate_config(config)
     graph = TradingAgentsGraph(debug=False, config=cfg)
 
     ratings: Dict[str, str] = {}
@@ -84,9 +113,8 @@ def signals_from_propagate(
     target feeds the conviction score used to prioritise funding within a tier.
     """
     from tradingagents.graph.trading_graph import TradingAgentsGraph
-    from tradingagents.default_config import DEFAULT_CONFIG
 
-    cfg = (config or DEFAULT_CONFIG).copy()
+    cfg = _prepare_propagate_config(config)
     graph = TradingAgentsGraph(debug=False, config=cfg)
 
     signals: Dict[str, dict] = {}
