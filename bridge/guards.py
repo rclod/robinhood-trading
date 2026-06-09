@@ -35,6 +35,11 @@ def _conviction(order: PlannedOrder) -> int:
     return -abs(rank - 2)  # Buy/Sell -> -2 (strongest); Hold -> 0 (weakest)
 
 
+def _is_spec(order: PlannedOrder) -> bool:
+    """Speculative-sleeve order — bounded separately in allocate, bypasses core caps."""
+    return order.rating == "SPEC"
+
+
 def _reduces_risk(order: PlannedOrder) -> bool:
     """True if the order shrinks the position (trim or exit), not grows it.
 
@@ -83,18 +88,19 @@ def apply_guards(
             o.reject("instrument not shortable")
         # per-name ceiling on the resulting TARGET position (not the order
         # delta), and only for risk-increasing orders — a trim/exit can never
-        # breach a position-size cap. Sizing already caps targets, so this is
-        # defense-in-depth.
-        if not _reduces_risk(o) and _target_notional(o) > cfg.per_name_cap * equity + 1e-6:
+        # breach a position-size cap. Speculative-sleeve orders have their own
+        # (smaller) per-name cap enforced in allocate, so they bypass this.
+        if (not _reduces_risk(o) and not _is_spec(o)
+                and _target_notional(o) > cfg.per_name_cap * equity + 1e-6):
             o.reject(
                 f"target position ${_target_notional(o):,.0f} exceeds per-name cap "
                 f"${cfg.per_name_cap * equity:,.0f}"
             )
 
-    # 3. Portfolio caps — only risk-INCREASING orders consume cap budget.
-    # Risk-reducing orders (trims/exits) bypass these entirely so the bridge can
-    # always shed exposure. Increasing orders are checked strongest-first.
-    increasing = [o for o in plan.approved_orders if not _reduces_risk(o)]
+    # 3. Portfolio caps — only risk-INCREASING core orders consume cap budget.
+    # Risk-reducing orders (trims/exits) and speculative-sleeve orders bypass the
+    # core sector/per-name/max-position/daily caps (each is separately bounded).
+    increasing = [o for o in plan.approved_orders if not _reduces_risk(o) and not _is_spec(o)]
 
     # 3a. sector cap (target exposure of increasing orders)
     sector_notional: Dict[str, float] = {}
@@ -112,9 +118,12 @@ def apply_guards(
             sector_notional[sec] = used + _target_notional(o)
 
     # 3b. max open positions — count names that would be open after the book.
+    # (Speculative-sleeve names are a separate sleeve and don't consume core slots.)
     open_after = set(s for s, p in snapshot.positions.items() if p.shares != 0)
     kept = 0
     for o in sorted(plan.approved_orders, key=_conviction):
+        if _is_spec(o):
+            continue
         # an order that flattens (target 0) frees a slot; one that opens uses one
         opens = o.target_shares != 0 and o.symbol not in open_after
         if opens:

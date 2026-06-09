@@ -282,7 +282,17 @@ def main() -> None:
     if missing and not args.quotes:
         quotes.update(get_quotes(missing, cfg))
 
-    plan = build_rotation_plan(args.date, ratings, snapshot, quotes, cfg, price_targets)
+    # Speculative sleeve: this week's scanner candidates (funded by scanner
+    # conviction). Fetch their quotes too (untradable small-caps fail open).
+    from .scanner import load_speculative
+    spec_candidates = load_speculative()
+    spec_missing = [c["ticker"].upper() for c in spec_candidates
+                    if c.get("ticker") and c["ticker"].upper() not in quotes]
+    if spec_missing and not args.quotes:
+        quotes.update(get_quotes(spec_missing, cfg))
+
+    plan = build_rotation_plan(args.date, ratings, snapshot, quotes, cfg, price_targets,
+                               speculative=spec_candidates)
     # Persist the decision (idempotent ledger + warehouse) just like the dry-run.
     ts = datetime.now(timezone.utc).isoformat()
     Ledger(default_db_path(cfg.state_dir)).record_plan(plan, ts)

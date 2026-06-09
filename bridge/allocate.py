@@ -50,6 +50,7 @@ def build_rotation_plan(
     quotes: Dict[str, MarketQuote],
     cfg: BridgeConfig,
     price_targets: Dict[str, float] | None = None,
+    speculative: list | None = None,
 ) -> OrderPlan:
     rec = build_recommendation(trade_date, ratings, snapshot, quotes, cfg, price_targets)
     equity = snapshot.equity
@@ -60,6 +61,8 @@ def build_rotation_plan(
         plan.notes.append("cash account (no margin) — longs-only; bearish ratings exit to flat")
 
     held = {s for s, p in snapshot.positions.items() if p.shares != 0}
+    spec_by_ticker = {c["ticker"].upper(): c for c in (speculative or []) if c.get("ticker")}
+    spec_set = set(spec_by_ticker)
 
     # 1. Reductions (trim/exit) — execute fully, regardless of budget.
     for t in rec.targets:
@@ -77,14 +80,22 @@ def build_rotation_plan(
         if t.action == "hold":
             plan.holds.append(t.symbol)
 
-    # 2. Buys — conviction-priority, fractional, within the dry-powder budget.
-    # Reserve = a fraction of TOTAL NET LIQ (Ryan's rule): keep e.g. 20% of the
-    # whole account liquid as the only hard cap of "not available"; everything
-    # else is deployable, bounded by settled buying power (cash account, T+1).
+    # Available to deploy today = settled buying power minus the dry-powder reserve
+    # (a fraction of TOTAL NET LIQ — keep e.g. 20% of the account liquid).
     reserve = cfg.cash_reserve_frac * snapshot.equity   # net liq = positions + cash
-    budget = max(0.0, snapshot.buying_power - reserve)
+    available = max(0.0, snapshot.buying_power - reserve)
     if cfg.max_deploy is not None:        # optional absolute cap (off by default)
-        budget = min(budget, cfg.max_deploy)
+        available = min(available, cfg.max_deploy)
+
+    # 2. SPECULATIVE sleeve — scanner-discovered lottery picks funded by scanner
+    # conviction (NOT the pipeline, which would veto pre-data names). Bounded to a
+    # slice of net liq, small per name, NEW entries only (held spec names are
+    # managed by the pipeline). Carved out of `available` before the core book.
+    spec_deployed, spec_report = _fund_speculative(
+        plan, snapshot, quotes, cfg, spec_by_ticker, held, available, trade_date)
+
+    # 3. Core buys — conviction-priority, fractional, within the remaining budget.
+    budget = max(0.0, available - spec_deployed)
     deployed = 0.0
     sector_used: Dict[str, float] = {}
     etf_cap = cfg.etf_sleeve_frac * equity   # bounded ETF sleeve
@@ -100,7 +111,8 @@ def build_rotation_plan(
     # Fund strongest first: tier, then finer conviction score (price-target
     # upside), then held-names, then name. Score replaces the old arbitrary
     # alphabetical tiebreak among equal-tier names.
-    adds = [t for t in rec.targets if t.action == "add"]
+    # Core adds exclude speculative names (funded by the sleeve, not the core book).
+    adds = [t for t in rec.targets if t.action == "add" and t.symbol not in spec_set]
     adds.sort(key=lambda t: (t.conviction, -t.score, 0 if t.symbol in held else 1, t.symbol))
 
     candidates: List[dict] = []
@@ -142,10 +154,14 @@ def build_rotation_plan(
         "buying_power": round(snapshot.buying_power, 2),
         "reserve": round(reserve, 2),
         "budget": round(budget, 2),
-        "deployed": round(deployed, 2),
-        "dry_powder": round(snapshot.buying_power - deployed, 2),
+        "deployed": round(deployed + spec_deployed, 2),
+        "core_deployed": round(deployed, 2),
+        "dry_powder": round(snapshot.buying_power - deployed - spec_deployed, 2),
         "etf_sleeve_cap": round(etf_cap, 2),
         "etf_deployed": round(etf_used, 2),
+        "speculative_sleeve_cap": round(cfg.speculative_frac * equity, 2),
+        "speculative_deployed": round(spec_deployed, 2),
+        "speculative": spec_report,
         "candidates": candidates,
         "recommendation": [
             {"symbol": t.symbol, "rating": t.rating, "score": t.score, "action": t.action,
@@ -160,6 +176,39 @@ def build_rotation_plan(
         f"(${reserve:,.0f} dry-powder reserve held); {funded_n} buy(s)"
     )
     return plan
+
+
+def _fund_speculative(plan, snapshot, quotes, cfg, spec_by_ticker, held, available, trade_date):
+    """Fund speculative ('lottery') picks from the bounded sleeve by scanner
+    conviction. NEW entries only — held spec names are managed by the pipeline.
+    Returns (deployed, report)."""
+    equity = snapshot.equity
+    sleeve = min(cfg.speculative_frac * equity, available)
+    per_name = cfg.speculative_per_name_frac * equity
+    deployed = 0.0
+    report = []
+    for tkr, c in sorted(spec_by_ticker.items(), key=lambda kv: -(kv[1].get("conviction") or 50)):
+        conv = c.get("conviction")
+        if tkr in held:
+            report.append({"ticker": tkr, "conviction": conv, "funded": 0.0,
+                           "status": "held — managed by pipeline"})
+            continue
+        q = quotes.get(tkr)
+        if q is None:
+            report.append({"ticker": tkr, "conviction": conv, "funded": 0.0,
+                           "status": "no quote / likely untradable — skipped"})
+            continue
+        room = min(per_name, sleeve - deployed)
+        if room < MIN_BUY:
+            report.append({"ticker": tkr, "conviction": conv, "funded": 0.0,
+                           "status": "sleeve full"})
+            continue
+        amount = round(room, 2)
+        o = _dollar_buy(tkr, amount, q, 0.0, trade_date, "SPEC", cfg)
+        plan.orders.append(o)
+        deployed += amount
+        report.append({"ticker": tkr, "conviction": conv, "funded": amount, "status": "funded"})
+    return deployed, report
 
 
 def _cand(t, funded, status, reason=""):

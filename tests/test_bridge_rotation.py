@@ -176,5 +176,39 @@ def test_etf_sleeve_cap_limits_etf_deployment():
     assert plan.rotation["etf_deployed"] <= 0.10 * 25_000 + 1e-6   # sleeve cap respected
 
 
+def test_speculative_sleeve_funds_by_conviction_capped():
+    cfg = BridgeConfig()  # 15% sleeve, 4% per name
+    snap = _snap(buying_power=15_000, equity=15_000)
+    quotes = {"ASTS": _q(89, "Communication Services"), "ONDS": _q(9.7, "Industrials")}
+    spec = [{"ticker": "ASTS", "conviction": 70}, {"ticker": "ONDS", "conviction": 60}]
+    plan = build_rotation_plan("d", {}, snap, quotes, cfg, speculative=spec)
+    rot = plan.rotation
+    funded = {r["ticker"]: r["funded"] for r in rot["speculative"] if r["status"] == "funded"}
+    assert funded["ASTS"] <= 0.04 * 15_000 + 1e-6        # per-name cap $600
+    assert rot["speculative_deployed"] <= 0.15 * 15_000 + 1e-6  # sleeve cap $2,250
+    spec_orders = [o for o in plan.approved_orders if o.rating == "SPEC"]
+    assert spec_orders and all(o.dollar_amount is not None for o in spec_orders)  # fractional $ buys
+
+
+def test_held_speculative_name_is_managed_not_rebought():
+    cfg = BridgeConfig()
+    snap = _snap(buying_power=15_000, equity=15_000,
+                 positions={"ASTS": Position("ASTS", shares=5, avg_cost=80.0)})
+    plan = build_rotation_plan("d", {}, snap, {"ASTS": _q(89)}, cfg,
+                               speculative=[{"ticker": "ASTS", "conviction": 70}])
+    row = next(r for r in plan.rotation["speculative"] if r["ticker"] == "ASTS")
+    assert row["status"].startswith("held")
+    assert not any(o.rating == "SPEC" for o in plan.approved_orders)  # not re-bought
+
+
+def test_speculative_sleeve_total_is_capped():
+    cfg = BridgeConfig(speculative_frac=0.10, speculative_per_name_frac=0.04)
+    snap = _snap(buying_power=15_000, equity=15_000)
+    quotes = {t: _q(50, "Energy") for t in ("A", "B", "C", "D", "E")}
+    spec = [{"ticker": t, "conviction": 60} for t in ("A", "B", "C", "D", "E")]
+    plan = build_rotation_plan("d", {}, snap, quotes, cfg, speculative=spec)
+    assert plan.rotation["speculative_deployed"] <= 0.10 * 15_000 + 1e-6  # $1,500 sleeve
+
+
 def _quotes(syms):
     return {s: _q(100) for s in syms}

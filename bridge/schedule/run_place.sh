@@ -88,7 +88,10 @@ You are the robinhood-trading AT-OPEN place step ($MODE, $DATE). The market is o
    rated today.
 4. The payload's tickets are sells-first, then conviction-ranked fractional dollar
    BUYS. Fractional buys are market orders and need regular hours — that's why this
-   runs at the open.
+   runs at the open. Tickets whose rationale.rating is "SPEC" are the SPECULATIVE
+   sleeve (scanner 'lottery' picks): be STRICT on review alerts — if review_equity_order
+   flags not tradable / not fractional-eligible / illiquid / halted, SKIP that spec
+   name and record it. Report the rotation.speculative block separately.
 5. If execution_enabled is false (dry-run): report what WOULD be placed (each
    ticket's symbol/side/amount, plus the funding summary) and STOP — place nothing.
    If execution_enabled is true (live): for each ticket with place=true, in order:
