@@ -78,16 +78,21 @@ You are the robinhood-trading AT-OPEN place step ($MODE, $DATE). The market is o
    uv --directory "$REPO" run python -m bridge.executor \\
      --account-number $ACCT --account-json <account.json> --portfolio-json <portfolio.json> \\
      --positions-json <positions.json> --signals "$SIG" --date $DATE
-3. The payload's tickets are sells-first, then conviction-ranked fractional dollar
+3. ACCOUNT REVIEW FIRST: the payload's "portfolio" block has net liq, buying power,
+   cash, and EACH open position with shares, avg cost, current price, market value,
+   and unrealized P&L (\$ and %). Report this up front — it's the basis for today's
+   management decision. Note any outsized winners/losers and how each held name is
+   rated today.
+4. The payload's tickets are sells-first, then conviction-ranked fractional dollar
    BUYS. Fractional buys are market orders and need regular hours — that's why this
    runs at the open.
-4. If execution_enabled is false (dry-run): report what WOULD be placed (each
+5. If execution_enabled is false (dry-run): report what WOULD be placed (each
    ticket's symbol/side/amount, plus the funding summary) and STOP — place nothing.
    If execution_enabled is true (live): for each ticket with place=true, in order:
    skip if its ref_id already shows placed in the ledger; review_equity_order; if a
    blocking alert (insufficient buying power, halted), skip + record; else
    place_equity_order; then record_placement(...). Honour all alerts; never force.
-5. Report placed / skipped / deferred with the conviction rationale.
+6. Report placed / skipped / deferred with the conviction rationale.
 NEVER place on a non-agentic account. NEVER place when execution_enabled is false.
 EOF
 

@@ -36,6 +36,7 @@ from .config import BridgeConfig
 from .ledger import Ledger, default_db_path
 from .models import OrderPlan, PlannedOrder
 from .allocate import build_rotation_plan
+from .portfolio import portfolio_status
 from .warehouse import Warehouse
 
 
@@ -274,6 +275,12 @@ def main() -> None:
         if args.quotes
         else get_quotes(ratings.keys(), cfg)
     )
+    # Ensure every HELD name has a quote so pre-trade P&L can be computed even if
+    # a holding isn't in today's rated universe.
+    held = [s for s, p in snapshot.positions.items() if p.shares != 0]
+    missing = [s for s in held if s not in quotes]
+    if missing and not args.quotes:
+        quotes.update(get_quotes(missing, cfg))
 
     plan = build_rotation_plan(args.date, ratings, snapshot, quotes, cfg, price_targets)
     # Persist the decision (idempotent ledger + warehouse) just like the dry-run.
@@ -282,6 +289,8 @@ def main() -> None:
     Warehouse(cfg.state_dir).append_plan(plan, ts)
 
     payload = build_execution_payload(plan, args.account_number, cfg)
+    # Pre-trade account status + per-position P&L (an explicit input to the decision).
+    payload["portfolio"] = portfolio_status(snapshot, quotes, plan.assessments)
     json.dump(payload, sys.stdout, indent=2)
     sys.stdout.write("\n")
 
