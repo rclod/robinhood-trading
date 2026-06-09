@@ -56,7 +56,39 @@ def _prepare_propagate_config(config: Optional[dict]) -> dict:
         vendors["news_data"] = "alpha_vantage,yfinance"
         cfg["data_vendors"] = vendors
         logger.info("Alpha Vantage routed for news (yfinance fallback on quota)")
+    _install_macro_news_cache()
     return cfg
+
+
+def _install_macro_news_cache(iface=None) -> None:
+    """Memoize ``get_global_news`` for the lifetime of a compute run.
+
+    Macro/global news is identical for every ticker on a given date, so without
+    this each of the ~29 ticker analyses re-fetches the same article set — wasting
+    the tiny Alpha Vantage quota (and time). We wrap the vendor implementations in
+    ``VENDOR_METHODS["get_global_news"]`` with an in-process cache keyed on the call
+    args (date/look-back/limit), so the macro news is fetched ONCE and reused.
+    Idempotent; ticker-specific ``get_news`` is left uncached (it genuinely differs).
+    """
+    import functools
+
+    if iface is None:
+        try:
+            import tradingagents.dataflows.interface as iface  # type: ignore
+        except Exception as exc:  # pragma: no cover
+            logger.debug("macro-news cache not installed: %s", exc)
+            return
+
+    methods = getattr(iface, "VENDOR_METHODS", {}).get("get_global_news")
+    if not methods:
+        return
+    for vendor, impl in list(methods.items()):
+        func = impl[0] if isinstance(impl, list) else impl
+        if getattr(func, "_bridge_cached", False):
+            continue
+        cached = functools.lru_cache(maxsize=16)(func)
+        cached._bridge_cached = True
+        methods[vendor] = [cached] if isinstance(impl, list) else cached
 
 
 def _env_truthy(name: str, default: bool) -> bool:
