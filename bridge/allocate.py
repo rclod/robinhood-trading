@@ -78,11 +78,12 @@ def build_rotation_plan(
             plan.holds.append(t.symbol)
 
     # 2. Buys — conviction-priority, fractional, within the dry-powder budget.
-    # Reserve is a fraction of settled buying power (spendable), so we always
-    # keep some of today's cash liquid for tomorrow (sells settle T+1).
-    reserve = cfg.cash_reserve_frac * snapshot.buying_power
+    # Reserve = a fraction of TOTAL NET LIQ (Ryan's rule): keep e.g. 20% of the
+    # whole account liquid as the only hard cap of "not available"; everything
+    # else is deployable, bounded by settled buying power (cash account, T+1).
+    reserve = cfg.cash_reserve_frac * snapshot.equity   # net liq = positions + cash
     budget = max(0.0, snapshot.buying_power - reserve)
-    if cfg.max_deploy is not None:        # honour an explicit "deploy up to $X" cap
+    if cfg.max_deploy is not None:        # optional absolute cap (off by default)
         budget = min(budget, cfg.max_deploy)
     deployed = 0.0
     sector_used: Dict[str, float] = {}
@@ -137,6 +138,7 @@ def build_rotation_plan(
     plan = apply_guards(plan, snapshot, cfg)
 
     plan.rotation = {
+        "net_liq": round(snapshot.equity, 2),
         "buying_power": round(snapshot.buying_power, 2),
         "reserve": round(reserve, 2),
         "budget": round(budget, 2),

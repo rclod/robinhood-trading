@@ -118,9 +118,9 @@ class BridgeConfig:
     )
     allow_short: bool = True          # honoured only if the account has margin;
                                       # on a cash account bearish ratings exit to flat
-    # Dry powder: fraction of settled BUYING POWER kept UNdeployed each day. On a
-    # cash account sells settle T+1, so deploying 100% today leaves nothing
-    # settled to act on tomorrow. Funding deploys at most (1 - frac) of buying power.
+    # Dry powder: fraction of TOTAL NET LIQ kept liquid as the hard reserve. The
+    # rest is deployable (bounded by settled buying power on a cash account; sells
+    # settle T+1). budget = buying_power - cash_reserve_frac * net_liq.
     cash_reserve_frac: float = 0.20
     # ETF sleeve: ETFs are a bounded complement to single-name stock-picking, not
     # equal citizens in the conviction ranking. Their score is cut by the haircut

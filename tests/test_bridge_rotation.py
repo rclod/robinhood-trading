@@ -8,7 +8,10 @@ from bridge.models import MarketQuote, Position, PortfolioSnapshot
 from bridge.recommend import build_recommendation
 
 
-def _snap(buying_power, positions=None, equity=25_000, margin=True):
+def _snap(buying_power, positions=None, equity=None, margin=True):
+    # Default to an all-cash account (net liq == buying power) unless equity is
+    # given. Reserve is now a fraction of net liq (equity), so the two matter.
+    equity = buying_power if equity is None else equity
     return PortfolioSnapshot(
         account_number="X", equity=equity, buying_power=buying_power,
         positions=positions or {}, agentic_allowed=True, margin_enabled=margin,
@@ -23,13 +26,25 @@ def _q(price, sector="Technology"):
 
 def test_recommendation_is_capital_agnostic_and_price_blind():
     cfg = BridgeConfig()
-    snap = _snap(buying_power=0)  # no capital at all
+    snap = _snap(buying_power=0, equity=25_000)  # no spendable cash, but a real book
     # A $90 and a $900 name, both Overweight -> same target weight (8% = $2,000).
     quotes = {"CHEAP": _q(90), "PRICEY": _q(900, "Energy")}
     rec = build_recommendation("d", {"CHEAP": "Overweight", "PRICEY": "Overweight"}, snap, quotes, cfg)
     tn = {t.symbol: t.target_notional for t in rec.targets}
     assert tn["CHEAP"] == tn["PRICEY"]            # price does not affect the target
     assert all(t.action == "add" for t in rec.targets)  # recommended regardless of $0 capital
+
+
+def test_reserve_is_fraction_of_net_liq_not_buying_power():
+    # Net liq $20k (mostly positions), only $5k settled cash. Reserve = 20% of
+    # net liq = $4k -> budget = $5k BP - $4k = $1k.
+    cfg = BridgeConfig()  # 20% reserve
+    snap = _snap(buying_power=5_000, equity=20_000)
+    plan = build_rotation_plan("d", {"AAPL": "Buy"}, snap, _quotes(["AAPL"]), cfg)
+    r = plan.rotation
+    assert r["net_liq"] == 20_000
+    assert r["reserve"] == 4_000.0          # 20% of net liq, not of buying power
+    assert r["deployed"] <= 1_000 + 1e-6    # BP - reserve
 
 
 # --- funding layer ----------------------------------------------------------

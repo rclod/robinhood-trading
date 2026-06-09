@@ -40,8 +40,8 @@ if [ -f "$DONE" ]; then exit 0; fi
 # No signals yet (compute still running or didn't run) -> wait; a later tick retries.
 if [ ! -f "$SIG" ]; then exit 0; fi
 
-# Per-run deployment ceiling (safety circuit-breaker for autonomous trading).
-export BRIDGE_MAX_DEPLOY="${BRIDGE_MAX_DEPLOY:-12000}"
+# No fixed deploy cap: the 20%-of-net-liq reserve is the hard limit; everything
+# else is deployable. Set BRIDGE_MAX_DEPLOY in the env to re-impose an absolute cap.
 # Event gate: don't place until morning red-folder events have cleared AND the
 # open has settled (base 08:35 CT = ~5 min after the 08:30 CT open).
 if ! uv --directory "$REPO" run python -m bridge.market_calendar --date "$DATE" >/dev/null 2>&1; then exit 0; fi

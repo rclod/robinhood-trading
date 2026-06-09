@@ -16,8 +16,9 @@ import argparse
 import json
 import logging
 import os
-from datetime import date
+from datetime import date, datetime, timezone
 
+from . import usage
 from .config import BridgeConfig
 from .sources import signals_from_propagate
 
@@ -33,6 +34,9 @@ def main() -> None:
 
     cfg = BridgeConfig.from_env()
     logger.info("compute: %d names for %s (provider via env)", len(cfg.watchlist), args.date)
+
+    usage.reset()
+    usage.install()  # capture token usage from the propagate LLM calls
     signals = signals_from_propagate(cfg.watchlist, args.date)
 
     os.makedirs(os.path.dirname(os.path.abspath(args.save_signals)), exist_ok=True)
@@ -40,6 +44,21 @@ def main() -> None:
         json.dump(signals, f, indent=2)
     rated = sum(1 for v in signals.values() if v.get("rating"))
     logger.info("saved %d/%d signals -> %s", rated, len(cfg.watchlist), args.save_signals)
+
+    # Token usage + estimated cost for the run.
+    rep = usage.report()
+    logger.info("token usage: %d calls, %s tokens, cache-hit %.0f%%, est ~$%.2f",
+                rep["total_calls"], f"{rep['total_tokens']:,}",
+                rep["cache_hit_rate"] * 100, rep["total_cost_usd"])
+    for r in rep["by_model"]:
+        logger.info("  %s: %d calls  in=%s (cached %s) out=%s  ~$%.4f",
+                    r["model"], r["calls"], f"{r['prompt']:,}", f"{r['cached']:,}",
+                    f"{r['completion']:,}", r["cost_usd"])
+    udir = os.path.join(cfg.state_dir, "usage")
+    os.makedirs(udir, exist_ok=True)
+    with open(os.path.join(udir, f"usage-{args.date}.jsonl"), "a", encoding="utf-8") as f:
+        f.write(json.dumps({"ts": datetime.now(timezone.utc).isoformat(),
+                            "date": args.date, "names": len(cfg.watchlist), **rep}) + "\n")
 
 
 if __name__ == "__main__":
