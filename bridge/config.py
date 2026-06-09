@@ -120,7 +120,7 @@ class BridgeConfig:
     # Dry powder: fraction of settled BUYING POWER kept UNdeployed each day. On a
     # cash account sells settle T+1, so deploying 100% today leaves nothing
     # settled to act on tomorrow. Funding deploys at most (1 - frac) of buying power.
-    cash_reserve_frac: float = 0.10
+    cash_reserve_frac: float = 0.20
     # ETF sleeve: ETFs are a bounded complement to single-name stock-picking, not
     # equal citizens in the conviction ranking. Their score is cut by the haircut
     # (so a stock of equal rating funds first), and total ETF exposure can't exceed
@@ -176,7 +176,7 @@ class BridgeConfig:
             account_number=os.getenv("BRIDGE_ACCOUNT_NUMBER") or None,
             execution_enabled=_env_bool("BRIDGE_ENABLED", False),
             allow_short=_env_bool("BRIDGE_ALLOW_SHORT", True),
-            cash_reserve_frac=_env_float("BRIDGE_CASH_RESERVE_FRAC", 0.10),
+            cash_reserve_frac=_env_float("BRIDGE_CASH_RESERVE_FRAC", 0.20),
             etf_conviction_haircut=_env_float("BRIDGE_ETF_HAIRCUT", 12.0),
             etf_sleeve_frac=_env_float("BRIDGE_ETF_SLEEVE_FRAC", 0.33),
             risk_per_trade=_env_float("BRIDGE_RISK_PER_TRADE", 0.01),
