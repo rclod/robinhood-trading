@@ -63,6 +63,17 @@ SECTOR_ETF_PROXY: Dict[str, str] = {
 SEMI_SYMBOLS = ("NVDA", "AMD", "AVGO", "SMCI", "MU", "INTC", "QCOM", "TXN", "ASML", "TSM", "ARM")
 SEMI_PROXY = "SMH"
 
+# Sector/thematic ETFs added to the rated universe so sector conviction can be
+# expressed without a single-name bet (e.g. SMH for semis vs. picking AVGO/AMD).
+# Each carries a sector so it shares the sector exposure cap with its single
+# names — yfinance often returns no sector for an ETF, so we map it explicitly.
+DEFAULT_ETFS: List[str] = ["SMH", "XLK", "XLF", "XLE", "XLV", "XLY", "XLC", "XLI", "XLP"]
+ETF_SECTOR: Dict[str, str] = {
+    "SMH": "Technology", "XLK": "Technology", "XLF": "Financial Services",
+    "XLE": "Energy", "XLV": "Healthcare", "XLY": "Consumer Cyclical",
+    "XLC": "Communication Services", "XLI": "Industrials", "XLP": "Consumer Defensive",
+}
+
 
 def _env_float(name: str, default: float) -> float:
     raw = os.getenv(name)
@@ -126,8 +137,10 @@ class BridgeConfig:
     intraday_portfolio_drawdown: float = 0.05  # book down >5% on day -> risk-off (halt buys)
     intraday_hard_exit_fraction: float = 1.0  # fraction of a hard-stopped position to shed (1.0 = full exit)
 
-    # --- universe ---
-    watchlist: List[str] = field(default_factory=lambda: list(DEFAULT_WATCHLIST))
+    # --- universe (single names + sector ETFs) ---
+    watchlist: List[str] = field(
+        default_factory=lambda: list(DEFAULT_WATCHLIST) + list(DEFAULT_ETFS)
+    )
 
     # --- storage ---
     state_dir: str = field(

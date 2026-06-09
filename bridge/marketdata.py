@@ -42,6 +42,12 @@ def _atr(symbol: str, period: int = 14) -> Optional[float]:
 
 
 def _sector(symbol: str) -> Optional[str]:
+    # Known ETFs: yfinance usually returns no sector, so map explicitly so they
+    # share the sector exposure cap with their single names.
+    from .config import ETF_SECTOR
+
+    if symbol.upper() in ETF_SECTOR:
+        return ETF_SECTOR[symbol.upper()]
     try:
         from tradingagents.agents.utils.agent_utils import resolve_instrument_identity
 

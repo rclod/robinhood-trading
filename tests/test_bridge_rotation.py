@@ -119,5 +119,21 @@ def test_assessments_capture_all_ratings_including_holds():
     assert plan.assessments == {"AMD": "Hold", "JPM": "Hold"}
 
 
+def test_etf_sector_is_mapped_for_caps():
+    from bridge.marketdata import _sector
+    assert _sector("SMH") == "Technology"          # shares tech cap with NVDA/AAPL
+    assert _sector("XLF") == "Financial Services"
+    assert _sector("XLE") == "Energy"
+
+
+def test_etf_funds_like_a_stock_via_fractional():
+    cfg = BridgeConfig()
+    snap = _snap(buying_power=3_000)
+    plan = build_rotation_plan("d", {"SMH": "Overweight"}, snap, {"SMH": _q(250)}, cfg)
+    funded = [c for c in plan.rotation["candidates"] if c["status"] in ("funded", "scaled")]
+    assert funded and funded[0]["symbol"] == "SMH"
+    assert plan.approved_orders[0].dollar_amount is not None  # fractional dollar buy
+
+
 def _quotes(syms):
     return {s: _q(100) for s in syms}
