@@ -129,6 +129,10 @@ class BridgeConfig:
     # the shared sector cap + stocks-first ordering.
     etf_conviction_haircut: float = 12.0
     etf_sleeve_frac: float = 0.33
+    # Speculative ("lottery") sleeve: weekly scanner-discovered, social-arbitrage
+    # small/mid caps funded from a bounded slice of net liq, each capped small.
+    speculative_frac: float = 0.15        # max % of net liq across spec picks
+    speculative_per_name_frac: float = 0.04  # max % of net liq per spec name
     # Absolute cap on total new BUYS deployed in a run (USD). None = no cap; the
     # dry-powder budget governs. Set to honour "deploy up to $X this run".
     max_deploy: Optional[float] = None
@@ -183,6 +187,8 @@ class BridgeConfig:
             cash_reserve_frac=_env_float("BRIDGE_CASH_RESERVE_FRAC", 0.20),
             etf_conviction_haircut=_env_float("BRIDGE_ETF_HAIRCUT", 12.0),
             etf_sleeve_frac=_env_float("BRIDGE_ETF_SLEEVE_FRAC", 0.33),
+            speculative_frac=_env_float("BRIDGE_SPEC_FRAC", 0.15),
+            speculative_per_name_frac=_env_float("BRIDGE_SPEC_PER_NAME_FRAC", 0.04),
             max_deploy=(
                 float(os.environ["BRIDGE_MAX_DEPLOY"])
                 if os.getenv("BRIDGE_MAX_DEPLOY") else None
