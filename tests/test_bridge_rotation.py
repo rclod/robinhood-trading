@@ -135,5 +135,31 @@ def test_etf_funds_like_a_stock_via_fractional():
     assert plan.approved_orders[0].dollar_amount is not None  # fractional dollar buy
 
 
+def test_etf_conviction_haircut_ranks_stock_first():
+    cfg = BridgeConfig()  # haircut 12
+    from bridge.recommend import build_recommendation
+    rec = build_recommendation("d", {"SMH": "Overweight", "MSFT": "Overweight"},
+                               _snap(buying_power=0), {"SMH": _q(100), "MSFT": _q(100)}, cfg)
+    score = {t.symbol: t.score for t in rec.targets}
+    assert score["MSFT"] > score["SMH"]   # equal rating, but ETF haircut -> stock ranks first
+
+
+def test_stock_funds_before_etf_under_tight_budget():
+    cfg = BridgeConfig()
+    snap = _snap(buying_power=1_000)  # ~one slice after reserve
+    quotes = {"SMH": _q(100), "MSFT": _q(100, "Industrials")}
+    plan = build_rotation_plan("d", {"SMH": "Overweight", "MSFT": "Overweight"}, snap, quotes, cfg)
+    funded = [c for c in plan.rotation["candidates"] if c["status"] in ("funded", "scaled")]
+    assert funded[0]["symbol"] == "MSFT"   # stock funded before the ETF
+
+
+def test_etf_sleeve_cap_limits_etf_deployment():
+    cfg = BridgeConfig(etf_sleeve_frac=0.10)  # ETFs <= 10% of equity
+    snap = _snap(buying_power=25_000, equity=25_000)  # plenty of budget
+    quotes = {s: _q(100, "Energy") for s in ("XLE", "XLF", "XLK")}
+    plan = build_rotation_plan("d", {"XLE": "Buy", "XLF": "Buy", "XLK": "Buy"}, snap, quotes, cfg)
+    assert plan.rotation["etf_deployed"] <= 0.10 * 25_000 + 1e-6   # sleeve cap respected
+
+
 def _quotes(syms):
     return {s: _q(100) for s in syms}

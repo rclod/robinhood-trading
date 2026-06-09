@@ -20,7 +20,7 @@ from __future__ import annotations
 import math
 from typing import Dict, List
 
-from .config import BridgeConfig
+from .config import BridgeConfig, is_etf
 from .guards import apply_guards
 from .models import MarketQuote, OrderPlan, PlannedOrder, PortfolioSnapshot
 from .reconcile import _order_for, _ref_id
@@ -84,11 +84,15 @@ def build_rotation_plan(
     budget = max(0.0, snapshot.buying_power - reserve)
     deployed = 0.0
     sector_used: Dict[str, float] = {}
+    etf_cap = cfg.etf_sleeve_frac * equity   # bounded ETF sleeve
+    etf_used = 0.0
     for s, p in snapshot.positions.items():
         q = quotes.get(s)
         if q and p.shares > 0:
             sec = q.sector or "UNKNOWN"
             sector_used[sec] = sector_used.get(sec, 0.0) + p.shares * q.price
+            if is_etf(s):
+                etf_used += p.shares * q.price
 
     # Fund strongest first: tier, then finer conviction score (price-target
     # upside), then held-names, then name. Score replaces the old arbitrary
@@ -100,12 +104,21 @@ def build_rotation_plan(
     for t in adds:
         q = quotes[t.symbol]
         sec = q.sector or "UNKNOWN"
+        etf = is_etf(t.symbol)
         per_name_room = cfg.per_name_cap * equity - t.current_notional
         sector_room = cfg.sector_cap * equity - sector_used.get(sec, 0.0)
-        room = min(t.delta_notional, max(0.0, per_name_room),
-                   max(0.0, sector_room), max(0.0, budget - deployed))
+        rooms = [t.delta_notional, max(0.0, per_name_room),
+                 max(0.0, sector_room), max(0.0, budget - deployed)]
+        if etf:  # bounded ETF sleeve
+            rooms.append(max(0.0, etf_cap - etf_used))
+        room = min(rooms)
         if room < MIN_BUY:
-            reason = "dry-powder budget reached" if (budget - deployed) < MIN_BUY else "per-name/sector cap reached"
+            if etf and (etf_cap - etf_used) < MIN_BUY:
+                reason = "ETF sleeve cap reached"
+            elif (budget - deployed) < MIN_BUY:
+                reason = "dry-powder budget reached"
+            else:
+                reason = "per-name/sector cap reached"
             candidates.append(_cand(t, 0.0, "deferred", reason))
             continue
         amount = round(room, 2)
@@ -113,6 +126,8 @@ def build_rotation_plan(
                                        trade_date, t.rating, cfg))
         deployed += amount
         sector_used[sec] = sector_used.get(sec, 0.0) + (t.current_notional + amount)
+        if etf:
+            etf_used += amount
         status = "funded" if amount >= t.delta_notional - 0.01 else "scaled"
         candidates.append(_cand(t, amount, status,
                                 "" if status == "funded" else f"scaled to ${room:,.0f} remaining"))
@@ -125,6 +140,8 @@ def build_rotation_plan(
         "budget": round(budget, 2),
         "deployed": round(deployed, 2),
         "dry_powder": round(snapshot.buying_power - deployed, 2),
+        "etf_sleeve_cap": round(etf_cap, 2),
+        "etf_deployed": round(etf_used, 2),
         "candidates": candidates,
         "recommendation": [
             {"symbol": t.symbol, "rating": t.rating, "score": t.score, "action": t.action,

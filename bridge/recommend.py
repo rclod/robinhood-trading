@@ -15,7 +15,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, List
 
-from .config import BridgeConfig
+from .config import BridgeConfig, is_etf
 from .guards import _TIER_RANK
 from .models import MarketQuote, PortfolioSnapshot
 from .sizing import target_notional
@@ -93,10 +93,13 @@ def build_recommendation(
             action = "exit" if tn <= 0 else "trim"
         else:
             action = "hold"
+        sc = conviction_score(rating, price_targets.get(sym), q.price)
+        if is_etf(sym):  # lower-confidence (no company fundamentals) -> funds after stocks
+            sc = max(0.0, sc - cfg.etf_conviction_haircut)
         targets.append(Target(
             symbol=sym, rating=rating,
             conviction=_TIER_RANK.get(rating.capitalize(), 2),
-            score=round(conviction_score(rating, price_targets.get(sym), q.price), 1),
+            score=round(sc, 1),
             target_notional=round(tn, 2), current_notional=round(cur_notional, 2),
             delta_notional=round(tn - cur_notional, 2), action=action,
         ))
