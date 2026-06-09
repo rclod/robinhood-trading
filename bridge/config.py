@@ -37,7 +37,8 @@ DEFAULT_WATCHLIST: List[str] = [
     "JPM", "V", "GS",                        # financials
     "UNH", "LLY",                            # health care
     "XOM", "CVX",                            # energy
-    "CAT", "COST",                           # industrials / staples
+    "CAT",                                    # industrials
+    "COST", "WMT",                           # consumer staples / retail
 ]
 
 
