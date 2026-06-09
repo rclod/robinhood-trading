@@ -24,16 +24,36 @@ mkdir -p "$LOGDIR"
 DATE="$(date +%F)"
 LOG="$LOGDIR/place-$DATE.log"
 SIG="$SIGDIR/signals-$DATE.json"
+DONE="$SIGDIR/place-$DATE.done"   # run-once marker
 
 # Trading-day guard.
 if ! uv --directory "$REPO" run python -m bridge.market_calendar --date "$DATE" >/dev/null 2>&1; then
   echo "$(date -Is) $DATE is not a US trading day — skipping place step" >> "$LOG"
   exit 0
 fi
-# No signals computed this morning -> nothing to place.
-if [ ! -f "$SIG" ]; then
-  echo "$(date -Is) no signals file ($SIG) — pre-open compute did not run; skipping" >> "$LOG"
+# Run-once: already placed today.
+if [ -f "$DONE" ]; then exit 0; fi
+# Lock: prevent overlapping place runs from frequent cron ticks.
+exec 9>"$SIGDIR/place-$DATE.lock" || exit 1
+flock -n 9 || exit 0
+if [ -f "$DONE" ]; then exit 0; fi
+# No signals yet (compute still running or didn't run) -> wait; a later tick retries.
+if [ ! -f "$SIG" ]; then exit 0; fi
+
+# Per-run deployment ceiling (safety circuit-breaker for autonomous trading).
+export BRIDGE_MAX_DEPLOY="${BRIDGE_MAX_DEPLOY:-12000}"
+# Event gate: don't place until morning red-folder events have cleared AND the
+# open has settled (base 08:35 CT = ~5 min after the 08:30 CT open).
+if ! uv --directory "$REPO" run python -m bridge.market_calendar --date "$DATE" >/dev/null 2>&1; then exit 0; fi
+if ! uv --directory "$REPO" run python -m bridge.event_gate --check ready --base 08:35 --date "$DATE" 2>>"$LOG"; then
   exit 0
+fi
+
+# Afternoon red-folder event pending (e.g. FOMC) -> hold extra dry powder; the
+# post-event re-rate deploys later.
+if uv --directory "$REPO" run python -m bridge.event_gate --check hold --date "$DATE" >/dev/null 2>&1; then
+  export BRIDGE_CASH_RESERVE_FRAC="${BRIDGE_PREEVENT_RESERVE_FRAC:-0.50}"
+  echo "$(date -Is) afternoon event pending — holding dry powder (reserve ${BRIDGE_CASH_RESERVE_FRAC})" >> "$LOG"
 fi
 
 # Read-only by default (dry-run). To go live, set BRIDGE_ENABLED=1 in the env and
@@ -77,3 +97,6 @@ cd "$TA_DIR"
   claude -p "$PROMPT" --allowedTools "$ALLOWED_TOOLS" --max-turns 80
   echo
 } >> "$LOG" 2>&1
+# Mark done so later cron ticks don't re-run. Order idempotency (ref_id) already
+# prevents duplicate fills if this ever does run twice.
+touch "$DONE"

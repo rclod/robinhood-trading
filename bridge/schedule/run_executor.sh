@@ -27,6 +27,23 @@ if ! uv --directory "$REPO" run python -m bridge.market_calendar --date "$DATE" 
   exit 0
 fi
 
+# Run-once guard: signals file is the marker. If we already computed today, stop
+# (cron fires this every 15 min through the morning so the event gate can pick
+# the right time; we only want one run).
+if [ -f "$SIG" ]; then exit 0; fi
+
+# Lock: compute takes 40-75 min, longer than the 15-min cron interval, so prevent
+# overlapping runs. Non-blocking flock; if another instance holds it, exit.
+exec 9>"$SIGDIR/compute-$DATE.lock" || exit 1
+flock -n 9 || exit 0
+if [ -f "$SIG" ]; then exit 0; fi  # re-check after acquiring the lock
+
+# Red-folder event gate: don't run the full analysis until morning high-impact
+# events (CPI/PPI/NFP at 07:30 CT, etc.) have passed + buffer. Base 07:30 CT.
+if ! uv --directory "$REPO" run python -m bridge.event_gate --check ready --base 07:30 --date "$DATE" 2>>"$LOG"; then
+  exit 0   # waiting for a red-folder event to clear; a later cron tick retries
+fi
+
 # The watchlist (single names + sector ETFs) comes from bridge config; override
 # with BRIDGE_WATCHLIST to trim cost. ~29 Grok runs by default.
 {

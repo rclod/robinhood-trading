@@ -1,0 +1,5 @@
+{
+  "_comment": "High-impact ('red folder') US economic events, local CT times. Maintained weekly. The scheduler delays the full analysis until after morning events (+buffer); afternoon events (e.g. FOMC) trigger a hold-dry-powder posture + post-event re-rate.",
+  "2026-06-10": [{"time_ct": "07:30", "event": "Core CPI", "impact": "high"}],
+  "2026-06-11": [{"time_ct": "07:30", "event": "Core PPI", "impact": "high"}]
+}
