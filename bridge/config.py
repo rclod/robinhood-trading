@@ -133,6 +133,9 @@ class BridgeConfig:
     # small/mid caps funded from a bounded slice of net liq, each capped small.
     speculative_frac: float = 0.15        # max % of net liq across spec picks
     speculative_per_name_frac: float = 0.04  # max % of net liq per spec name
+    spec_stop_frac: float = 0.20          # exit a spec name down >20% vs entry (capital protection)
+    spec_take_profit_trim: float = 0.50   # on a take-profit ('sell the news') signal, trim this fraction
+    spec_rotation_edge: float = 5.0       # a new pick must beat the weakest held by this conviction margin to swap
     # Absolute cap on total new BUYS deployed in a run (USD). None = no cap; the
     # dry-powder budget governs. Set to honour "deploy up to $X this run".
     max_deploy: Optional[float] = None
@@ -189,6 +192,9 @@ class BridgeConfig:
             etf_sleeve_frac=_env_float("BRIDGE_ETF_SLEEVE_FRAC", 0.33),
             speculative_frac=_env_float("BRIDGE_SPEC_FRAC", 0.15),
             speculative_per_name_frac=_env_float("BRIDGE_SPEC_PER_NAME_FRAC", 0.04),
+            spec_stop_frac=_env_float("BRIDGE_SPEC_STOP_FRAC", 0.20),
+            spec_take_profit_trim=_env_float("BRIDGE_SPEC_TP_TRIM", 0.50),
+            spec_rotation_edge=_env_float("BRIDGE_SPEC_ROTATION_EDGE", 5.0),
             max_deploy=(
                 float(os.environ["BRIDGE_MAX_DEPLOY"])
                 if os.getenv("BRIDGE_MAX_DEPLOY") else None

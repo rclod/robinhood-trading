@@ -65,8 +65,14 @@ def build_rotation_plan(
     spec_set = set(spec_by_ticker)
 
     # 1. Reductions (trim/exit) — execute fully, regardless of budget.
+    # EXCEPTION: held speculative names are NOT exited by the data-driven pipeline
+    # (it lags the social-arbitrage thesis and would exit prematurely). They are
+    # managed by the speculative track (re-scan + stop + take-profit + timeframe).
     for t in rec.targets:
         if t.action not in ("trim", "exit"):
+            continue
+        if t.symbol in spec_set:
+            plan.notes.append(f"{t.symbol}: pipeline {t.action} suppressed — managed by speculative track")
             continue
         q = quotes[t.symbol]
         cur = snapshot.shares_of(t.symbol)
