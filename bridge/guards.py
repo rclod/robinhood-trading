@@ -123,17 +123,17 @@ def apply_guards(
                 continue
             kept += 1
 
-    # 3c. max daily new notional — turnover from risk-increasing orders only.
-    spent = 0.0
-    for o in sorted(increasing, key=_conviction):
-        if not o.approved:
-            continue
-        if spent + o.notional > cfg.max_daily_notional + 1e-6:
-            o.reject(
-                f"daily notional cap ${cfg.max_daily_notional:,.0f} reached"
-            )
-        else:
-            spent += o.notional
+    # 3c. max daily new notional — optional turnover throttle (off by default;
+    # the dry-powder budget + buying-power guard already bound deployment).
+    if cfg.max_daily_notional is not None:
+        spent = 0.0
+        for o in sorted(increasing, key=_conviction):
+            if not o.approved:
+                continue
+            if spent + o.notional > cfg.max_daily_notional + 1e-6:
+                o.reject(f"daily notional cap ${cfg.max_daily_notional:,.0f} reached")
+            else:
+                spent += o.notional
 
     # 3d. buying-power ceiling (hard on a cash account — sells free cash, buys
     # consume it; in a cash account you can't spend unsettled/absent funds).

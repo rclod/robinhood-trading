@@ -138,7 +138,10 @@ class BridgeConfig:
     max_positions: int = 8
     per_name_cap: float = 0.18        # hard notional ceiling per name
     sector_cap: float = 0.30          # max gross exposure per sector
-    max_daily_notional: float = 10_000.0
+    # Optional daily turnover throttle. None (default) = no separate cap; the
+    # dry-powder budget (<=90% of buying power) + the buying-power guard already
+    # bound how much can deploy in a day. Set a number to throttle churn further.
+    max_daily_notional: Optional[float] = None
 
     # --- execution semantics ---
     market_hours: str = "regular_hours"   # shorts / flips can't use extended
@@ -184,7 +187,10 @@ class BridgeConfig:
             max_positions=_env_int("BRIDGE_MAX_POSITIONS", 8),
             per_name_cap=_env_float("BRIDGE_PER_NAME_CAP", 0.18),
             sector_cap=_env_float("BRIDGE_SECTOR_CAP", 0.30),
-            max_daily_notional=_env_float("BRIDGE_MAX_DAILY_NOTIONAL", 10_000.0),
+            max_daily_notional=(
+                float(os.environ["BRIDGE_MAX_DAILY_NOTIONAL"])
+                if os.getenv("BRIDGE_MAX_DAILY_NOTIONAL") else None
+            ),
             market_hours=os.getenv("BRIDGE_MARKET_HOURS", "regular_hours"),
             order_type=os.getenv("BRIDGE_ORDER_TYPE", "limit"),
             time_in_force=os.getenv("BRIDGE_TIME_IN_FORCE", "gfd"),
