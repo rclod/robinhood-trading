@@ -82,6 +82,8 @@ def build_rotation_plan(
     # keep some of today's cash liquid for tomorrow (sells settle T+1).
     reserve = cfg.cash_reserve_frac * snapshot.buying_power
     budget = max(0.0, snapshot.buying_power - reserve)
+    if cfg.max_deploy is not None:        # honour an explicit "deploy up to $X" cap
+        budget = min(budget, cfg.max_deploy)
     deployed = 0.0
     sector_used: Dict[str, float] = {}
     etf_cap = cfg.etf_sleeve_frac * equity   # bounded ETF sleeve

@@ -128,6 +128,9 @@ class BridgeConfig:
     # the shared sector cap + stocks-first ordering.
     etf_conviction_haircut: float = 12.0
     etf_sleeve_frac: float = 0.33
+    # Absolute cap on total new BUYS deployed in a run (USD). None = no cap; the
+    # dry-powder budget governs. Set to honour "deploy up to $X this run".
+    max_deploy: Optional[float] = None
     risk_per_trade: float = 0.01      # 1% of equity max loss at the stop
     stop_atr_mult: float = 2.0        # stop distance = mult * ATR(14)
     stop_floor: float = 0.05          # clamp derived stop to [floor, cap]
@@ -179,6 +182,10 @@ class BridgeConfig:
             cash_reserve_frac=_env_float("BRIDGE_CASH_RESERVE_FRAC", 0.20),
             etf_conviction_haircut=_env_float("BRIDGE_ETF_HAIRCUT", 12.0),
             etf_sleeve_frac=_env_float("BRIDGE_ETF_SLEEVE_FRAC", 0.33),
+            max_deploy=(
+                float(os.environ["BRIDGE_MAX_DEPLOY"])
+                if os.getenv("BRIDGE_MAX_DEPLOY") else None
+            ),
             risk_per_trade=_env_float("BRIDGE_RISK_PER_TRADE", 0.01),
             stop_atr_mult=_env_float("BRIDGE_STOP_ATR_MULT", 2.0),
             stop_floor=_env_float("BRIDGE_STOP_FLOOR", 0.05),
