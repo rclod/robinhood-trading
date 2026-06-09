@@ -36,9 +36,9 @@ DEFAULT_WATCHLIST: List[str] = [
     "AMZN", "TSLA", "HD",                    # consumer discretionary
     "JPM", "V", "GS",                        # financials
     "UNH", "LLY",                            # health care
-    "XOM", "CVX",                            # energy
-    "CAT",                                    # industrials
-    "COST", "WMT",                           # consumer staples / retail
+    "XOM", "CVX", "COP", "EOG", "SLB", "KMI",  # energy (majors, E&P, services, midstream)
+    "CAT",                                       # industrials
+    "COST", "WMT", "PG", "KO", "PEP", "MO",      # consumer staples / retail
 ]
 
 
