@@ -145,9 +145,15 @@ def signals_from_propagate(
     target feeds the conviction score used to prioritise funding within a tier.
     """
     from tradingagents.graph.trading_graph import TradingAgentsGraph
+    from .position_context import install as install_position_context
+    from .position_context import load_holdings
 
     cfg = _prepare_propagate_config(config)
     graph = TradingAgentsGraph(debug=False, config=cfg)
+    # Position-aware DECISION layer: the PM sees our current holding + P&L for
+    # names we hold (analysts stay objective). Reflection on prior outcomes is
+    # already handled by the framework's persistent memory log.
+    install_position_context(graph, load_holdings())
 
     signals: Dict[str, dict] = {}
     for symbol in watchlist:

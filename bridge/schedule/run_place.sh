@@ -73,7 +73,10 @@ You are the robinhood-trading AT-OPEN place step ($MODE, $DATE). The market is o
 
 1. get_accounts; confirm agentic_allowed account is $ACCT. get_portfolio($ACCT) and
    get_equity_positions($ACCT) -> write account.json/portfolio.json/positions.json
-   (FRESH state — buying power and prices have moved since pre-open).
+   (FRESH state — buying power and prices have moved since pre-open). ALSO write the
+   holdings to $HOME/.tradingagents/bridge/holdings.json as
+   {"SYMBOL": {"shares": <shares_available_for_sells>, "avg_cost": <average_buy_price>}}
+   for each position — this feeds tomorrow's position-aware analysis.
 2. Build the execution payload from the pre-open signals (no new Grok calls):
    uv --directory "$REPO" run python -m bridge.executor \\
      --account-number $ACCT --account-json <account.json> --portfolio-json <portfolio.json> \\
