@@ -31,13 +31,13 @@ DEFAULT_TIER_TARGET: Dict[str, float] = {
 # A liquid, sector-diversified seed universe. Edit freely — this is just the
 # starting watchlist propagate() runs on each day.
 DEFAULT_WATCHLIST: List[str] = [
-    "AAPL", "MSFT", "NVDA", "AMD", "AVGO",   # semis / tech
+    "AAPL", "MSFT", "NVDA", "AMD", "AVGO", "MU", "SNDK",  # semis / tech / storage
     "GOOGL", "META", "NFLX",                 # communication
     "AMZN", "TSLA", "HD",                    # consumer discretionary
-    "JPM", "V", "GS",                        # financials
+    "JPM", "V", "GS", "HOOD",                # financials / fintech
     "UNH", "LLY",                            # health care
     "XOM", "CVX", "COP", "EOG", "SLB", "KMI",  # energy (majors, E&P, services, midstream)
-    "CAT",                                       # industrials
+    "CAT", "ROP",                              # industrials
     "COST", "WMT", "PG", "KO", "PEP", "MO",      # consumer staples / retail
 ]
 
@@ -61,7 +61,7 @@ SECTOR_ETF_PROXY: Dict[str, str] = {
 # Semiconductors hide inside "Technology" in yfinance's sector field, so known
 # semis get the tighter SMH proxy to catch semi-specific rotation (e.g. the
 # Broadcom-driven unwind). Override takes precedence over the broad sector ETF.
-SEMI_SYMBOLS = ("NVDA", "AMD", "AVGO", "SMCI", "MU", "INTC", "QCOM", "TXN", "ASML", "TSM", "ARM")
+SEMI_SYMBOLS = ("NVDA", "AMD", "AVGO", "SMCI", "MU", "SNDK", "INTC", "QCOM", "TXN", "ASML", "TSM", "ARM")
 SEMI_PROXY = "SMH"
 
 # Sector/thematic ETFs added to the rated universe so sector conviction can be
